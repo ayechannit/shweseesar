@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { Users, UserPlus, Stethoscope, HeartPulse, Truck, Share2, Menu, X, Database, ChevronDown, ChevronRight } from 'lucide-react';
+import { Users, UserPlus, Stethoscope, HeartPulse, Truck, Share2, Menu, X, Database, ChevronDown, ChevronRight, Monitor, Package, Tags, FileText } from 'lucide-react';
 
 const navItems = [
   { path: '/patients', label: 'Patients', icon: Users },
@@ -9,11 +9,14 @@ const navItems = [
   { path: '/nurses', label: 'Nurses', icon: HeartPulse },
   { path: '/suppliers', label: 'Suppliers', icon: Truck },
   { path: '/referred_persons', label: 'Referred Persons', icon: Share2 },
+  { path: '/item_categories', label: 'Item Categories', icon: Tags },
+  { path: '/item_subcategories', label: 'Item Subcategories', icon: Tags },
+  { path: '/laboratories', label: 'Laboratories', icon: Monitor },
 ];
 
 export default function DashboardLayout() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
-  const [isMasterDataOpen, setIsMasterDataOpen] = useState(true);
+  const [isMasterDataOpen, setIsMasterDataOpen] = useState(false);
 
   const toggleDrawer = () => {
     setIsDrawerOpen(!isDrawerOpen);
@@ -44,6 +47,50 @@ export default function DashboardLayout() {
         </div>
         
         <div className="sidebar-content">
+          {/* Main Modules */}
+          <nav className="nav-links" style={{ paddingTop: '1.5rem' }}>
+            <NavLink 
+              to="/reception" 
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)}
+            >
+              <Monitor size={20} />
+              <span>Reception</span>
+            </NavLink>
+            <NavLink 
+              to="/billing" 
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)}
+            >
+              <FileText size={20} />
+              <span>Billing & Vouchers</span>
+            </NavLink>
+            <NavLink 
+              to="/stock" 
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)}
+            >
+              <Package size={20} />
+              <span>Stock & Inventory</span>
+            </NavLink>
+            <NavLink 
+              to="/pricing" 
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)}
+            >
+              <Tags size={20} />
+              <span>Pricing</span>
+            </NavLink>
+            <NavLink 
+              to="/gp-packages" 
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)}
+            >
+              <Package size={20} />
+              <span>GP Packages</span>
+            </NavLink>
+          </nav>
+
           {/* Collapsible Section Header */}
           <button className="nav-group-header" onClick={toggleMasterData}>
             <div className="nav-group-header-left">

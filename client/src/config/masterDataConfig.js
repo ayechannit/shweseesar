@@ -58,5 +58,32 @@ export const masterDataConfig = {
       { name: 'phone_number', label: 'Phone Number', type: 'text', required: true },
       { name: 'referral_percentage', label: 'Referral Percentage (%)', type: 'number', required: true },
     ]
+  },
+  item_categories: {
+    title: 'Item Categories',
+    table: 'item_categories',
+    fields: [
+      { name: 'name', label: 'Category Name', type: 'text', required: true },
+      { name: 'description', label: 'Description', type: 'text', required: false },
+    ]
+  },
+  item_subcategories: {
+    title: 'Item Subcategories',
+    table: 'item_subcategories',
+    fields: [
+      { name: 'category_id', label: 'Category ID', type: 'number', required: true }, // Ideally this would be a dropdown of categories, keeping it simple for now
+      { name: 'name', label: 'Subcategory Name', type: 'text', required: true },
+      { name: 'description', label: 'Description', type: 'text', required: false },
+    ]
+  },
+  laboratories: {
+    title: 'Laboratories',
+    table: 'laboratories',
+    fields: [
+      { name: 'name', label: 'Laboratory Name', type: 'text', required: true },
+      { name: 'contact_person', label: 'Contact Person', type: 'text', required: false },
+      { name: 'phone_number', label: 'Phone Number', type: 'text', required: false },
+      { name: 'address', label: 'Address', type: 'text', required: false },
+    ]
   }
 };
