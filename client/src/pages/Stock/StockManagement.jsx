@@ -17,22 +17,31 @@ export default function StockManagement() {
 
   // Modals
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
-  const [isStockInModalOpen, setIsStockInModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
   // Form States
-  const [itemForm, setItemForm] = useState({ subcategory_id: '', item_code: '', name: '', unit: '', min_stock_level: 0 });
+  const [itemForm, setItemForm] = useState({ 
+    subcategory_id: '', item_code: '', name: '', unit: '', min_stock_level: 0,
+    default_purchase_price: 0, default_sale_price: 0
+  });
+  const [editForm, setEditForm] = useState({ 
+    subcategory_id: '', item_code: '', name: '', unit: '', min_stock_level: 0,
+    default_purchase_price: 0, default_sale_price: 0
+  });
   const [modalSelectedCategoryId, setModalSelectedCategoryId] = useState('');
-  const [stockInForm, setStockInForm] = useState({ batch_number: '', expiry_date: '', quantity: 0, purchase_price: 0, sale_price: 0 });
+  const [editModalSelectedCategoryId, setEditModalSelectedCategoryId] = useState('');
 
   // Add Subcategory State
   const [isAddingSubcat, setIsAddingSubcat] = useState(false);
+  const [isAddingEditSubcat, setIsAddingEditSubcat] = useState(false);
   const [newSubcatName, setNewSubcatName] = useState('');
 
   // Load initial data
   useEffect(() => {
     fetchCategories();
     fetchSubcategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -41,6 +50,7 @@ export default function StockManagement() {
 
   useEffect(() => {
     fetchItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryFilter, page]);
 
   const fetchCategories = async () => {
@@ -109,6 +119,23 @@ export default function StockManagement() {
     setIsItemModalOpen(true);
   };
 
+  const openEditModal = (item) => {
+    setSelectedItem(item);
+    setEditForm({
+      subcategory_id: item.subcategory_id,
+      item_code: item.item_code,
+      name: item.name,
+      unit: item.unit,
+      min_stock_level: item.min_stock_level,
+      default_purchase_price: item.default_purchase_price || 0,
+      default_sale_price: item.default_sale_price || 0
+    });
+    setEditModalSelectedCategoryId(item.category_id);
+    setIsAddingEditSubcat(false);
+    setNewSubcatName('');
+    setIsEditModalOpen(true);
+  };
+
   const handleModalCategoryChange = (catId) => {
     setModalSelectedCategoryId(catId);
     // Auto-select first subcategory of the new category
@@ -116,22 +143,35 @@ export default function StockManagement() {
     setItemForm({ ...itemForm, subcategory_id: firstSubcat ? firstSubcat.id : '' });
   };
 
-  const handleAddSubcategory = async () => {
+  const handleEditModalCategoryChange = (catId) => {
+    setEditModalSelectedCategoryId(catId);
+    // Auto-select first subcategory of the new category
+    const firstSubcat = subcategories.find(s => String(s.category_id) === String(catId));
+    setEditForm({ ...editForm, subcategory_id: firstSubcat ? firstSubcat.id : '' });
+  };
+
+  const handleAddSubcategory = async (isEdit = false) => {
     if (!newSubcatName.trim()) return;
     try {
+      const catId = isEdit ? editModalSelectedCategoryId : modalSelectedCategoryId;
       const res = await fetch(`${API_BASE}/master-data/item_subcategories`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           name: newSubcatName, 
-          category_id: modalSelectedCategoryId 
+          category_id: catId 
         })
       });
       if (res.ok) {
         const created = await res.json();
         await fetchSubcategories(); // Refresh list
-        setItemForm({ ...itemForm, subcategory_id: created.id }); // Select the new one
-        setIsAddingSubcat(false);
+        if (isEdit) {
+          setEditForm({ ...editForm, subcategory_id: created.id });
+          setIsAddingEditSubcat(false);
+        } else {
+          setItemForm({ ...itemForm, subcategory_id: created.id }); // Select the new one
+          setIsAddingSubcat(false);
+        }
         setNewSubcatName('');
       }
     } catch (err) {
@@ -161,18 +201,36 @@ export default function StockManagement() {
     }
   };
 
-  const handleStockIn = async (e) => {
+  const handleUpdateItem = async (e) => {
     e.preventDefault();
+    console.log(`Updating item at: ${API_BASE}/stock/items/${selectedItem.id}`);
     try {
-      const res = await fetch(`${API_BASE}/stock/purchase`, {
-        method: 'POST',
+      const res = await fetch(`${API_BASE}/stock/items/${selectedItem.id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...stockInForm, item_id: selectedItem.id })
+        body: JSON.stringify(editForm)
       });
       if (res.ok) {
-        setIsStockInModalOpen(false);
-        setStockInForm({ batch_number: '', expiry_date: '', quantity: 0, purchase_price: 0, sale_price: 0 });
+        setIsEditModalOpen(false);
         fetchItems();
+      } else {
+        alert("Failed to update item");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteItem = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this item?")) return;
+    try {
+      const res = await fetch(`${API_BASE}/stock/items/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchItems();
+      } else {
+        alert("Failed to delete item");
       }
     } catch (err) {
       console.error(err);
@@ -267,14 +325,22 @@ export default function StockManagement() {
                           )}
                         </td>
                         <td>
-                          <div className="actions" style={{ justifyContent: 'center' }}>
+                          <div className="actions" style={{ justifyContent: 'center', gap: '0.5rem' }}>
                             <button 
                               className="btn btn-outline" 
                               style={{ padding: '0.25rem 0.5rem', color: '#2563eb' }}
-                              onClick={() => { setSelectedItem(item); setIsStockInModalOpen(true); }}
-                              title="Add Stock (Purchase)"
+                              onClick={() => openEditModal(item)}
+                              title="Edit Item"
                             >
-                              <ArrowDown size={16} /> Stock In
+                              Edit
+                            </button>
+                            <button 
+                              className="btn btn-outline" 
+                              style={{ padding: '0.25rem 0.5rem', color: '#ef4444' }}
+                              onClick={() => handleDeleteItem(item.id)}
+                              title="Delete Item"
+                            >
+                              Remove
                             </button>
                           </div>
                         </td>
@@ -287,6 +353,10 @@ export default function StockManagement() {
           )}
         </div>
       </div>
+
+      {/* Pagination (already here) */}
+      
+      {/* Modals... */}
 
       {/* Pagination */}
       {!loading && totalPages > 1 && (
@@ -359,7 +429,7 @@ export default function StockManagement() {
                         onChange={e => setNewSubcatName(e.target.value)}
                         autoFocus
                       />
-                      <button type="button" className="btn btn-primary" onClick={handleAddSubcategory} style={{ padding: '0.5rem' }}>Save</button>
+                      <button type="button" className="btn btn-primary" onClick={() => handleAddSubcategory(false)} style={{ padding: '0.5rem' }}>Save</button>
                       <button type="button" className="btn btn-outline" onClick={() => setIsAddingSubcat(false)} style={{ padding: '0.5rem' }}>X</button>
                     </div>
                   ) : (
@@ -394,6 +464,16 @@ export default function StockManagement() {
                 <label className="form-label">Min Stock Level (Alert Threshold)</label>
                 <input type="number" className="form-control" value={itemForm.min_stock_level} onChange={e => setItemForm({...itemForm, min_stock_level: e.target.value})} />
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Default Purchase Price</label>
+                  <input type="number" step="0.01" className="form-control" value={itemForm.default_purchase_price} onChange={e => setItemForm({...itemForm, default_purchase_price: parseFloat(e.target.value)})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default Sale Price</label>
+                  <input type="number" step="0.01" className="form-control" value={itemForm.default_sale_price} onChange={e => setItemForm({...itemForm, default_sale_price: parseFloat(e.target.value)})} />
+                </div>
+              </div>
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setIsItemModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">Create</button>
@@ -403,38 +483,104 @@ export default function StockManagement() {
         </div>
       )}
 
-      {/* Modal: Stock In (Purchase) */}
-      {isStockInModalOpen && (
+      {/* Modal: Edit Item */}
+      {isEditModalOpen && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">Stock In: {selectedItem?.name}</h2>
-              <button className="close-btn" onClick={() => setIsStockInModalOpen(false)}><X size={24} /></button>
+              <h2 className="modal-title">Edit Item: {selectedItem?.name}</h2>
+              <button className="close-btn" onClick={() => setIsEditModalOpen(false)}><X size={24} /></button>
             </div>
-            <form onSubmit={handleStockIn}>
-              <div className="form-group">
-                <label className="form-label">Batch Number</label>
-                <input type="text" className="form-control" value={stockInForm.batch_number} onChange={e => setStockInForm({...stockInForm, batch_number: e.target.value})} />
+            <form onSubmit={handleUpdateItem}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Category</label>
+                  <select 
+                    className="form-control" 
+                    required 
+                    value={editModalSelectedCategoryId} 
+                    onChange={e => handleEditModalCategoryChange(e.target.value)}
+                  >
+                    {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>Subcategory</label>
+                    {!isAddingEditSubcat && (
+                      <button 
+                        type="button" 
+                        className="btn btn-outline" 
+                        style={{ padding: '2px 8px', fontSize: '10px' }}
+                        onClick={() => setIsAddingEditSubcat(true)}
+                      >
+                        + Add
+                      </button>
+                    )}
+                  </div>
+                  
+                  {isAddingEditSubcat ? (
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input 
+                        type="text" 
+                        className="form-control" 
+                        placeholder="New Subcat Name" 
+                        value={newSubcatName}
+                        onChange={e => setNewSubcatName(e.target.value)}
+                        autoFocus
+                      />
+                      <button type="button" className="btn btn-primary" onClick={() => handleAddSubcategory(true)} style={{ padding: '0.5rem' }}>Save</button>
+                      <button type="button" className="btn btn-outline" onClick={() => setIsAddingEditSubcat(false)} style={{ padding: '0.5rem' }}>X</button>
+                    </div>
+                  ) : (
+                    <select 
+                      className="form-control" 
+                      required 
+                      value={editForm.subcategory_id} 
+                      onChange={e => setEditForm({...editForm, subcategory_id: e.target.value})}
+                    >
+                      <option value="">-- Select Subcategory --</option>
+                      {subcategories
+                        .filter(s => String(s.category_id) === String(editModalSelectedCategoryId))
+                        .map(sub => <option key={sub.id} value={sub.id}>{sub.name}</option>)
+                      }
+                    </select>
+                  )}
+                </div>
               </div>
               <div className="form-group">
-                <label className="form-label">Expiry Date</label>
-                <input type="date" className="form-control" value={stockInForm.expiry_date} onChange={e => setStockInForm({...stockInForm, expiry_date: e.target.value})} />
+                <label className="form-label">Item Code</label>
+                <input type="text" className="form-control" required value={editForm.item_code} onChange={e => setEditForm({...editForm, item_code: e.target.value})} />
               </div>
               <div className="form-group">
-                <label className="form-label">Quantity Received</label>
-                <input type="number" className="form-control" required value={stockInForm.quantity} onChange={e => setStockInForm({...stockInForm, quantity: e.target.value})} />
+                <label className="form-label">Item Name</label>
+                <input type="text" className="form-control" required value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
               </div>
               <div className="form-group">
-                <label className="form-label">Purchase Price (Per Unit)</label>
-                <input type="number" step="0.01" className="form-control" value={stockInForm.purchase_price} onChange={e => setStockInForm({...stockInForm, purchase_price: e.target.value})} />
+                <label className="form-label">Unit</label>
+                <input type="text" className="form-control" required value={editForm.unit} onChange={e => setEditForm({...editForm, unit: e.target.value})} />
               </div>
               <div className="form-group">
-                <label className="form-label">Sale Price (Per Unit)</label>
-                <input type="number" step="0.01" className="form-control" value={stockInForm.sale_price} onChange={e => setStockInForm({...stockInForm, sale_price: e.target.value})} />
+                <label className="form-label">Current Stock (Read-only)</label>
+                <input type="text" className="form-control" value={selectedItem?.total_quantity} readOnly style={{ backgroundColor: '#f1f5f9' }} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Min Stock Level</label>
+                <input type="number" className="form-control" value={editForm.min_stock_level} onChange={e => setEditForm({...editForm, min_stock_level: e.target.value})} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Default Purchase Price</label>
+                  <input type="number" step="0.01" className="form-control" value={editForm.default_purchase_price} onChange={e => setEditForm({...editForm, default_purchase_price: parseFloat(e.target.value)})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Default Sale Price</label>
+                  <input type="number" step="0.01" className="form-control" value={editForm.default_sale_price} onChange={e => setEditForm({...editForm, default_sale_price: parseFloat(e.target.value)})} />
+                </div>
               </div>
               <div className="form-actions">
-                <button type="button" className="btn btn-outline" onClick={() => setIsStockInModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Receive Stock</button>
+                <button type="button" className="btn btn-outline" onClick={() => setIsEditModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Update Item</button>
               </div>
             </form>
           </div>

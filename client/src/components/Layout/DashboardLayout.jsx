@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { Users, UserPlus, Stethoscope, HeartPulse, Truck, Share2, Menu, X, Database, ChevronDown, ChevronRight, Monitor, Package, Tags, FileText } from 'lucide-react';
+import { Users, UserPlus, Stethoscope, HeartPulse, Truck, Share2, Menu, X, Database, ChevronDown, ChevronRight, Monitor, Package, Tags, FileText, FlaskConical } from 'lucide-react';
 
 const navItems = [
   { path: '/patients', label: 'Patients', icon: Users },
@@ -11,7 +11,7 @@ const navItems = [
   { path: '/referred_persons', label: 'Referred Persons', icon: Share2 },
   { path: '/item_categories', label: 'Item Categories', icon: Tags },
   { path: '/item_subcategories', label: 'Item Subcategories', icon: Tags },
-  { path: '/laboratories', label: 'Laboratories', icon: Monitor },
+  { path: '/laboratories', label: 'Laboratories', icon: FlaskConical },
 ];
 
 export default function DashboardLayout() {
@@ -66,6 +66,14 @@ export default function DashboardLayout() {
               <span>Billing & Vouchers</span>
             </NavLink>
             <NavLink 
+              to="/purchases" 
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)}
+            >
+              <Truck size={20} />
+              <span>Purchases</span>
+            </NavLink>
+            <NavLink 
               to="/stock" 
               className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
               onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)}
@@ -88,6 +96,14 @@ export default function DashboardLayout() {
             >
               <Package size={20} />
               <span>GP Packages</span>
+            </NavLink>
+            <NavLink 
+              to="/laboratory-investigations" 
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)}
+            >
+              <FlaskConical size={20} />
+              <span>Laboratory</span>
             </NavLink>
           </nav>
 

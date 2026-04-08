@@ -13,4 +13,5 @@ const pool = process.env.DATABASE_URL
 
 module.exports = {
   query: (text, params) => pool.query(text, params),
+  pool, // Export pool for transactions
 };

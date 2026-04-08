@@ -4,15 +4,27 @@ const db = require('./db');
 const multer = require('multer');
 const csv = require('csv-parser');
 const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const upload = multer({ dest: 'uploads/' });
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/')
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname))
+  }
+})
+
+const upload = multer({ storage: storage });
 
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Allowed master data tables to prevent SQL injection
 const ALLOWED_TABLES = [
@@ -349,6 +361,7 @@ app.delete('/api/appointments/:id', async (req, res) => {
 
 // List all stock items with current aggregate quantity
 app.get('/api/stock/items', async (req, res) => {
+  fs.appendFileSync('hit.log', `GET /api/stock/items hit at ${new Date().toISOString()}\n`);
   const { subcategory_id, category_id } = req.query; 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
@@ -441,6 +454,64 @@ app.post('/api/stock/items', async (req, res) => {
   }
 });
 
+app.put('/test-put', (req, res) => {
+  res.json({ message: 'test-put hit' });
+});
+
+// Update stock item
+app.put('/api/stock/items/:id', async (req, res) => {
+  const { id } = req.params;
+  fs.appendFileSync('hit.log', `PUT /api/stock/items/${id} hit at ${new Date().toISOString()}\n`);
+  const { 
+    subcategory_id, item_code, name, unit, min_stock_level,
+    default_purchase_price, default_sale_price, pricing_method, markup_percentage
+  } = req.body;
+  try {
+    const query = `
+      UPDATE stock_items
+      SET subcategory_id = $1, item_code = $2, name = $3, unit = $4, min_stock_level = $5,
+          default_purchase_price = $6, default_sale_price = $7, pricing_method = $8, markup_percentage = $9,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $10 AND is_active = true
+      RETURNING *;
+    `;
+    const result = await db.query(query, [
+      subcategory_id, item_code, name, unit, min_stock_level || 0,
+      default_purchase_price || 0, default_sale_price || 0,
+      pricing_method || 'MANUAL', markup_percentage || 0,
+      id
+    ]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update item' });
+  }
+});
+
+// Delete stock item (soft delete)
+app.delete('/api/stock/items/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const query = `
+      UPDATE stock_items
+      SET is_active = false, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND is_active = true
+      RETURNING id;
+    `;
+    const result = await db.query(query, [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    res.json({ message: 'Item deleted successfully', id: result.rows[0].id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete item' });
+  }
+});
+
 // GET: All batches for a specific item (for management/editing)
 app.get('/api/stock/batches/:itemId', async (req, res) => {
   const { itemId } = req.params;
@@ -478,26 +549,32 @@ app.get('/api/stock/batches/:itemId', async (req, res) => {
 // POST: Add new stock batch (Purchase/Stock IN)
 app.post('/api/stock/purchase', async (req, res) => {
   const { item_id, batch_number, expiry_date, quantity, purchase_price, sale_price } = req.body;
+  const client = await db.pool.connect();
   try {
+    await client.query('BEGIN');
     // 1. Create the batch
     const batchQuery = `
       INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING id;
     `;
-    const batchRes = await db.query(batchQuery, [item_id, batch_number, expiry_date, quantity, purchase_price, sale_price]);
+    const batchRes = await client.query(batchQuery, [item_id, batch_number, expiry_date, quantity, purchase_price, sale_price]);
     const batchId = batchRes.rows[0].id;
 
     // 2. Log transaction
-    await db.query(
+    await client.query(
       'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
       [item_id, batchId, 'IN', quantity, 'Purchase Entry']
     );
 
+    await client.query('COMMIT');
     res.status(201).json({ message: 'Stock received', batch_id: batchId });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ error: 'Failed to add stock' });
+  } finally {
+    client.release();
   }
 });
 
@@ -811,11 +888,11 @@ app.post('/api/gp-packages', async (req, res) => {
     return res.status(400).json({ error: 'Name and price are required' });
   }
 
+  const client = await db.pool.connect();
   try {
-    // Start transaction
-    await db.query('BEGIN');
+    await client.query('BEGIN');
 
-    const pkgRes = await db.query(
+    const pkgRes = await client.query(
       'INSERT INTO gp_packages (name, price) VALUES ($1, $2) RETURNING *',
       [name, price]
     );
@@ -823,19 +900,21 @@ app.post('/api/gp-packages', async (req, res) => {
 
     if (items && Array.isArray(items)) {
       for (let item of items) {
-        await db.query(
+        await client.query(
           'INSERT INTO gp_package_items (package_id, item_id, quantity) VALUES ($1, $2, $3)',
           [newPkg.id, item.item_id, item.quantity]
         );
       }
     }
 
-    await db.query('COMMIT');
+    await client.query('COMMIT');
     res.status(201).json(newPkg);
   } catch (err) {
-    await db.query('ROLLBACK');
+    await client.query('ROLLBACK');
     console.error('GP Packages POST error:', err);
     res.status(500).json({ error: 'Failed to create GP package' });
+  } finally {
+    client.release();
   }
 });
 
@@ -844,32 +923,35 @@ app.put('/api/gp-packages/:id', async (req, res) => {
   const { id } = req.params;
   const { name, price, items } = req.body;
 
+  const client = await db.pool.connect();
   try {
-    await db.query('BEGIN');
+    await client.query('BEGIN');
 
-    await db.query(
+    await client.query(
       'UPDATE gp_packages SET name = $1, price = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
       [name, price, id]
     );
 
     // Simplest approach: Delete old items and insert new ones
-    await db.query('DELETE FROM gp_package_items WHERE package_id = $1', [id]);
+    await client.query('DELETE FROM gp_package_items WHERE package_id = $1', [id]);
 
     if (items && Array.isArray(items)) {
       for (let item of items) {
-        await db.query(
+        await client.query(
           'INSERT INTO gp_package_items (package_id, item_id, quantity) VALUES ($1, $2, $3)',
           [id, item.item_id, item.quantity]
         );
       }
     }
 
-    await db.query('COMMIT');
+    await client.query('COMMIT');
     res.json({ message: 'Package updated successfully' });
   } catch (err) {
-    await db.query('ROLLBACK');
+    await client.query('ROLLBACK');
     console.error('GP Packages PUT error:', err);
     res.status(500).json({ error: 'Failed to update GP package' });
+  } finally {
+    client.release();
   }
 });
 
@@ -988,6 +1070,127 @@ app.get('/api/billing/vouchers/:id', async (req, res) => {
   }
 });
 
+// GET: All investigations for a specific laboratory
+app.get('/api/laboratories/:id/investigations', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query(`
+      SELECT vi.*, v.voucher_number, v.created_at as voucher_date, p.name as patient_name, p.patient_code, l.name as laboratory_name
+      FROM voucher_items vi
+      JOIN vouchers v ON vi.voucher_id = v.id
+      LEFT JOIN patients p ON v.patient_id = p.id
+      LEFT JOIN laboratories l ON vi.laboratory_id = l.id
+      WHERE vi.item_type = 'INVESTIGATION' AND vi.laboratory_id = $1
+      ORDER BY v.created_at DESC
+    `, [id]);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch laboratory investigations' });
+  }
+});
+
+// GET: All investigations (with lab filtering)
+app.get('/api/investigations', async (req, res) => {
+  const { laboratory_id, status } = req.query;
+  try {
+    let query = `
+      SELECT vi.*, v.voucher_number, v.created_at as voucher_date, p.name as patient_name, p.patient_code, l.name as laboratory_name
+      FROM voucher_items vi
+      JOIN vouchers v ON vi.voucher_id = v.id
+      LEFT JOIN patients p ON v.patient_id = p.id
+      LEFT JOIN laboratories l ON vi.laboratory_id = l.id
+      WHERE vi.item_type = 'INVESTIGATION'
+    `;
+    const params = [];
+    if (laboratory_id) {
+      params.push(laboratory_id);
+      query += ` AND vi.laboratory_id = $${params.length}`;
+    }
+    if (status) {
+      params.push(status);
+      query += ` AND vi.status = $${params.length}`;
+    }
+    query += ` ORDER BY v.created_at DESC`;
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch investigations' });
+  }
+});
+
+// PUT: Batch update investigation status
+app.put('/api/investigations/batch/status', async (req, res) => {
+  console.log('HIT: Batch update status');
+  const { ids, status } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No IDs provided' });
+  }
+  try {
+    const query = `
+      UPDATE voucher_items
+      SET status = $1
+      WHERE id = ANY($2)
+      RETURNING *
+    `;
+    const result = await db.query(query, [status, ids]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('BATCH UPDATE ERROR:', err);
+    res.status(500).json({ error: 'Failed to batch update status' });
+  }
+});
+
+// PUT: Update investigation status
+app.put('/api/investigations/:id/status', async (req, res) => {
+  console.log('HIT: Single update status, id:', req.params.id);
+  const { id } = req.params;
+  const { status } = req.body;
+  try {
+    const query = `
+      UPDATE voucher_items
+      SET status = $1
+      WHERE id = $2
+      RETURNING *
+    `;
+    const result = await db.query(query, [status, id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Investigation not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('SINGLE UPDATE ERROR:', err);
+    res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+// POST: Upload investigation result
+app.post('/api/investigations/:id/upload', upload.single('file'), async (req, res) => {
+  const { id } = req.params;
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  try {
+    const filePath = req.file.filename;
+    const query = `
+      UPDATE voucher_items 
+      SET result_file_path = $1, status = 'COMPLETED' 
+      WHERE id = $2 
+      RETURNING *
+    `;
+    const result = await db.query(query, [filePath, id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Investigation not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to upload result' });
+  }
+});
+
 // POST: Create Voucher
 app.post('/api/billing/vouchers', async (req, res) => {
   const { 
@@ -1001,13 +1204,13 @@ app.post('/api/billing/vouchers', async (req, res) => {
   const randPart = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
   const voucher_number = `VOU-${datePart}-${randPart}`;
 
-  const client = await db.pool?.connect() || db; // Handle if using pool or direct query
+  const client = await db.pool.connect();
 
   try {
-    await db.query('BEGIN');
+    await client.query('BEGIN');
 
     // 1. Insert Voucher
-    const vRes = await db.query(`
+    const vRes = await client.query(`
       INSERT INTO vouchers (voucher_number, patient_id, total_amount, discount_amount, net_amount, payment_method, notes)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id
@@ -1016,19 +1219,19 @@ app.post('/api/billing/vouchers', async (req, res) => {
 
     // 2. Insert Items & Deduct Stock
     for (const item of items) {
-      await db.query(`
+      await client.query(`
         INSERT INTO voucher_items (voucher_id, item_type, item_id, name, quantity, unit_price, subtotal, laboratory_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       `, [voucherId, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id]);
 
       if (item.item_type === 'PHARMACY') {
-        await deductStock(db, item.item_id, item.quantity, `Voucher sale ${voucher_number}`);
+        await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`);
       } else if (item.item_type === 'PACKAGE') {
         // Find package components
-        const pkgItems = await db.query('SELECT * FROM gp_package_items WHERE package_id = $1 AND is_active = true', [item.item_id]);
+        const pkgItems = await client.query('SELECT * FROM gp_package_items WHERE package_id = $1 AND is_active = true', [item.item_id]);
         for (const pi of pkgItems.rows) {
           const totalQty = pi.quantity * item.quantity;
-          await deductStock(db, pi.item_id, totalQty, `Voucher Package ${item.name} (${voucher_number})`);
+          await deductStock(client, pi.item_id, totalQty, `Voucher Package ${item.name} (${voucher_number})`);
         }
       }
     }
@@ -1036,19 +1239,143 @@ app.post('/api/billing/vouchers', async (req, res) => {
     // 3. Insert Referrals
     if (referrals && Array.isArray(referrals)) {
       for (const ref of referrals) {
-        await db.query(`
+        await client.query(`
           INSERT INTO voucher_referrals (voucher_id, referred_person_id, referral_type, percentage, amount)
           VALUES ($1, $2, $3, $4, $5)
         `, [voucherId, ref.referred_person_id, ref.referral_type, ref.percentage, ref.amount]);
       }
     }
 
-    await db.query('COMMIT');
+    await client.query('COMMIT');
     res.status(201).json({ id: voucherId, voucher_number });
   } catch (err) {
-    await db.query('ROLLBACK');
+    await client.query('ROLLBACK');
     console.error('VOUCHER CREATE ERROR:', err);
     res.status(500).json({ error: 'Failed to create voucher', details: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// --- Purchases Module Routes ---
+
+// GET: All purchases (paginated)
+app.get('/api/purchases', async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const offset = (page - 1) * limit;
+
+  try {
+    const countRes = await db.query('SELECT COUNT(*) FROM purchases');
+    const total = parseInt(countRes.rows[0].count);
+
+    const result = await db.query(`
+      SELECT p.*, s.company_name as supplier_name 
+      FROM purchases p
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
+      ORDER BY p.created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    res.json({
+      data: result.rows,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch purchases' });
+  }
+});
+
+// GET: Single purchase details
+app.get('/api/purchases/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const purchaseRes = await db.query(`
+      SELECT p.*, s.company_name as supplier_name, s.phone_number as supplier_phone
+      FROM purchases p
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
+      WHERE p.id = $1
+    `, [id]);
+    
+    if (purchaseRes.rows.length === 0) return res.status(404).json({ error: 'Purchase not found' });
+    const purchase = purchaseRes.rows[0];
+
+    const itemsRes = await db.query(`
+      SELECT pi.*, si.name as item_name, si.unit
+      FROM purchase_items pi
+      LEFT JOIN stock_items si ON pi.item_id = si.id
+      WHERE pi.purchase_id = $1
+    `, [id]);
+    purchase.items = itemsRes.rows;
+
+    res.json(purchase);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch purchase details' });
+  }
+});
+
+// POST: Create Purchase Invoice
+app.post('/api/purchases', async (req, res) => {
+  const { 
+    supplier_id, items, 
+    total_amount, paid_amount, balance_amount, 
+    payment_method, notes 
+  } = req.body;
+
+  // Generate Invoice Number: INV-YYMMDD-RAND
+  const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+  const randPart = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  const invoice_number = `INV-${datePart}-${randPart}`;
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Insert Purchase Record
+    const pRes = await client.query(`
+      INSERT INTO purchases (invoice_number, supplier_id, total_amount, paid_amount, balance_amount, payment_method, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id
+    `, [invoice_number, supplier_id, total_amount, paid_amount, balance_amount, payment_method, notes]);
+    const purchaseId = pRes.rows[0].id;
+
+    // 2. Insert Items & Update Stock
+    for (const item of items) {
+      // Create purchase item record
+      await client.query(`
+        INSERT INTO purchase_items (purchase_id, item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, subtotal)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [purchaseId, item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, item.subtotal]);
+
+      // Create stock batch for FEFO tracking
+      const batchQuery = `
+        INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id;
+      `;
+      const batchRes = await client.query(batchQuery, [item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price]);
+      const batchId = batchRes.rows[0].id;
+
+      // Log transaction
+      await client.query(
+        'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
+        [item.item_id, batchId, 'IN', item.quantity, `Purchase Invoice ${invoice_number}`]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ id: purchaseId, invoice_number });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PURCHASE CREATE ERROR:', err);
+    res.status(500).json({ error: 'Failed to create purchase invoice', details: err.message });
+  } finally {
+    client.release();
   }
 });
 

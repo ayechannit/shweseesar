@@ -26,6 +26,44 @@ export default function VoucherEntry({ onSave, onCancel }) {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // --- Add Patient Modal State ---
+  const [isAddPatientModalOpen, setIsAddPatientModalOpen] = useState(false);
+  const [newPatient, setNewPatient] = useState({
+    name: '',
+    phone_number: '',
+    date_of_birth: '',
+    gender: 'Other',
+    address: ''
+  });
+
+  const handleSavePatient = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${API_BASE}/master-data/patients`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPatient)
+      });
+      if (res.ok) {
+        const addedPatient = await res.json();
+        // Refresh patients list
+        const pRes = await fetch(`${API_BASE}/master-data/patients?limit=1000`);
+        const pData = await pRes.json();
+        setPatients(pData.data || []);
+        
+        // Auto-select the new patient
+        setSelectedPatient(addedPatient);
+        setIsAddPatientModalOpen(false);
+        setNewPatient({ name: '', phone_number: '', date_of_birth: '', gender: 'Other', address: '' });
+      } else {
+        alert("Failed to add patient");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error adding patient");
+    }
+  };
+
   // --- Totals ---
   const subtotal = selectedItems.reduce((sum, item) => sum + (parseFloat(item.subtotal) || 0), 0);
   const netTotal = subtotal - parseFloat(discount || 0);
@@ -63,7 +101,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
   // --- Handlers ---
   const handleAddItem = (item, type) => {
     const isPackage = type === 'PACKAGE';
-    const name = isPackage ? item.name : item.item_name;
+    const name = item.name || item.item_name;
     const price = isPackage ? item.price : (item.default_sale_price || 0);
     const itemId = item.id;
     
@@ -199,9 +237,9 @@ export default function VoucherEntry({ onSave, onCancel }) {
 
   return (
     <div className="voucher-entry" style={{ animation: 'slideIn 0.3s ease-out' }}>
-      
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
+      <form onSubmit={handleSubmit}>
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-3">
           <div style={{ backgroundColor: '#eff6ff', padding: '12px', borderRadius: '12px', color: '#2563eb' }}>
             <Receipt size={28} />
@@ -222,7 +260,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
         <div className="flex flex-col gap-6">
           
           {/* Patient Selection Card */}
-          <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0' }}>
+          <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0', overflow: 'visible' }}>
              <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <User size={18} className="text-blue-600" /> Patient Information
              </h3>
@@ -244,7 +282,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
                 </div>
                 
                 {showPatientResults && patientSearch && !selectedPatient && (
-                  <div className="search-dropdown shadow-lg" style={{ position: 'absolute', width: '100%', zIndex: 100, backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', marginTop: '8px', overflow: 'hidden' }}>
+                  <div className="search-dropdown shadow-lg" style={{ position: 'absolute', width: '100%', zIndex: 999, backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', marginTop: '8px', overflow: 'hidden' }}>
                     {filteredPatients.length === 0 ? (
                       <div className="p-6 text-center text-gray-500">No patients matching "{patientSearch}"</div>
                     ) : filteredPatients.map(p => (
@@ -264,7 +302,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
           </div>
 
           {/* Items Section */}
-          <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0' }}>
+          <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0', overflow: 'visible' }}>
             <div className="flex justify-between items-center mb-6">
               <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Package size={18} className="text-blue-600" /> Items & Services
@@ -279,7 +317,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
                   onFocus={() => setShowItemResults(true)}
                 />
                 {showItemResults && itemSearch && (
-                  <div className="search-dropdown shadow-lg" style={{ position: 'absolute', width: '100%', zIndex: 90, backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', marginTop: '8px', overflow: 'hidden' }}>
+                  <div className="search-dropdown shadow-lg" style={{ position: 'absolute', width: '100%', zIndex: 999, backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', marginTop: '8px', overflow: 'hidden' }}>
                     {filteredItems.length === 0 ? (
                       <div className="p-4 text-center text-gray-500">No items found</div>
                     ) : filteredItems.map((item, idx) => (
@@ -287,7 +325,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
                         <div className="flex justify-between items-center">
                           <div>
                             <div style={{ fontWeight: 600, color: '#1e293b' }}>
-                              {item.type === 'PACKAGE' ? item.name : item.item_name}
+                              {item.name || item.item_name}
                             </div>
                             <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
                               <span style={{ textTransform: 'uppercase', fontWeight: 700, color: '#3b82f6' }}>{item.type === 'PACKAGE' ? 'Package' : item.category_name}</span>
@@ -498,10 +536,10 @@ export default function VoucherEntry({ onSave, onCancel }) {
           )}
 
         </div>
-      </div>
+        </div>
+        </form>
 
-      <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        <style dangerouslySetInnerHTML={{ __html: `        @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .search-dropdown { max-height: 400px; overflow-y: auto; }
         .w-full { width: 100%; }
         .flex { display: flex; }
