@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Trash2, Save, X, User, Package, Monitor, UserPlus, Calculator, Receipt, CreditCard, ChevronRight, AlertCircle } from 'lucide-react';
+import AddPatientModal from '../../components/Modals/AddPatientModal';
 
 const API_BASE = 'http://localhost:5000/api';
 
 export default function VoucherEntry({ onSave, onCancel }) {
   // --- Master Data ---
   const [patients, setPatients] = useState([]);
+  const [physicians, setPhysicians] = useState([]);
   const [stockItems, setStockItems] = useState([]);
   const [gpPackages, setGpPackages] = useState([]);
   const [laboratories, setLaboratories] = useState([]);
@@ -19,6 +21,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
 
   // --- Form State ---
   const [selectedPatient, setSelectedPatient] = useState(null);
+  const [selectedPhysicianId, setSelectedPhysicianId] = useState('');
   const [selectedItems, setSelectedItems] = useState([]);
   const [referrals, setReferrals] = useState([]);
   const [discount, setDiscount] = useState(0);
@@ -28,45 +31,25 @@ export default function VoucherEntry({ onSave, onCancel }) {
 
   // --- Add Patient Modal State ---
   const [isAddPatientModalOpen, setIsAddPatientModalOpen] = useState(false);
-  const [newPatient, setNewPatient] = useState({
-    name: '',
-    phone_number: '',
-    date_of_birth: '',
-    gender: 'Other',
-    address: ''
-  });
 
-  const handleSavePatient = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_BASE}/master-data/patients`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPatient)
-      });
-      if (res.ok) {
-        const addedPatient = await res.json();
-        // Refresh patients list
-        const pRes = await fetch(`${API_BASE}/master-data/patients?limit=1000`);
-        const pData = await pRes.json();
-        setPatients(pData.data || []);
-        
-        // Auto-select the new patient
-        setSelectedPatient(addedPatient);
-        setIsAddPatientModalOpen(false);
-        setNewPatient({ name: '', phone_number: '', date_of_birth: '', gender: 'Other', address: '' });
-      } else {
-        alert("Failed to add patient");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Error adding patient");
-    }
+  const handleNewPatientSave = (addedPatient) => {
+    setPatients(prev => [addedPatient, ...prev]);
+    setSelectedPatient(addedPatient);
   };
 
   // --- Totals ---
   const subtotal = selectedItems.reduce((sum, item) => sum + (parseFloat(item.subtotal) || 0), 0);
   const netTotal = subtotal - parseFloat(discount || 0);
+
+  // Recalculate referral amounts when netTotal changes
+  useEffect(() => {
+    if (referrals.length > 0) {
+      setReferrals(prevRefs => prevRefs.map(ref => ({
+        ...ref,
+        amount: Math.round((netTotal * (parseFloat(ref.percentage) || 0)) / 100)
+      })));
+    }
+  }, [netTotal]);
 
   useEffect(() => {
     fetchMasterData();
@@ -74,8 +57,9 @@ export default function VoucherEntry({ onSave, onCancel }) {
 
   const fetchMasterData = async () => {
     try {
-      const [pRes, sRes, gRes, lRes, rRes] = await Promise.all([
+      const [pRes, dRes, sRes, gRes, lRes, rRes] = await Promise.all([
         fetch(`${API_BASE}/master-data/patients?limit=1000`),
+        fetch(`${API_BASE}/master-data/physicians?limit=200`),
         fetch(`${API_BASE}/stock/items?limit=1000`),
         fetch(`${API_BASE}/gp-packages?limit=100`),
         fetch(`${API_BASE}/master-data/laboratories?limit=100`),
@@ -83,12 +67,14 @@ export default function VoucherEntry({ onSave, onCancel }) {
       ]);
       
       const pData = await pRes.json();
+      const dData = await dRes.json();
       const sData = await sRes.json();
       const gData = await gRes.json();
       const lData = await lRes.json();
       const rData = await rRes.json();
 
       setPatients(pData.data || []);
+      setPhysicians(dData.data || []);
       setStockItems(sData.data || []);
       setGpPackages(gData.data || []);
       setLaboratories(lData.data || []);
@@ -135,9 +121,26 @@ export default function VoucherEntry({ onSave, onCancel }) {
     setSelectedItems(newItems);
   };
 
-  const updateItem = (index, field, value) => {
+  const updateItem = async (index, field, value) => {
     const newItems = [...selectedItems];
     newItems[index][field] = value;
+    
+    // Logic for Lab-Specific Pricing
+    if (field === 'laboratory_id' && value && newItems[index].item_type === 'INVESTIGATION') {
+      try {
+        const res = await fetch(`${API_BASE}/laboratories/${value}/test-pricing`);
+        const pricingData = await res.json();
+        // Find the specific pricing for this item
+        const specific = pricingData.find(p => String(p.item_id) === String(newItems[index].item_id));
+        if (specific) {
+           newItems[index].lab_cost_price = specific.purchase_price;
+           newItems[index].lab_commission_pct = specific.commission_percentage;
+        }
+      } catch (err) {
+        console.error('Failed to fetch specific lab pricing:', err);
+      }
+    }
+
     if (field === 'quantity' || field === 'unit_price') {
       newItems[index].subtotal = (parseFloat(newItems[index].quantity) || 0) * (parseFloat(newItems[index].unit_price) || 0);
     }
@@ -189,6 +192,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           patient_id: selectedPatient.id,
+          physician_id: selectedPhysicianId || null,
           items: selectedItems,
           referrals,
           total_amount: subtotal,
@@ -261,10 +265,35 @@ export default function VoucherEntry({ onSave, onCancel }) {
           
           {/* Patient Selection Card */}
           <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0', overflow: 'visible' }}>
-             <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <User size={18} className="text-blue-600" /> Patient Information
-             </h3>
+             <div className="flex justify-between items-center mb-5">
+               <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <User size={18} className="text-blue-600" /> Patient Information
+               </h3>
+               <button 
+                type="button"
+                className="btn btn-outline" 
+                style={{ padding: '4px 10px', fontSize: '12px', borderStyle: 'dashed' }}
+                onClick={() => setIsAddPatientModalOpen(true)}
+               >
+                 <UserPlus size={14} style={{ marginRight: '4px' }} /> Register New
+               </button>
+             </div>
+             <div className="form-group mb-4">
+                <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Physician (Doctor)</label>
+                <select 
+                  className="form-control"
+                  style={{ height: '42px', borderRadius: '8px' }}
+                  value={selectedPhysicianId}
+                  onChange={(e) => setSelectedPhysicianId(e.target.value)}
+                >
+                  <option value="">-- Select Physician (Optional) --</option>
+                  {physicians.map(doc => (
+                    <option key={doc.id} value={doc.id}>{doc.name}</option>
+                  ))}
+                </select>
+             </div>
              <div style={{ position: 'relative' }}>
+                <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Patient Search</label>
                 <div style={{ position: 'relative' }}>
                   <Search size={20} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                   <input 
@@ -415,55 +444,71 @@ export default function VoucherEntry({ onSave, onCancel }) {
         <div className="flex flex-col gap-6">
           
           {/* Referrals Redesign */}
-          <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0', backgroundColor: '#fcfcfd' }}>
+          <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', borderRadius: '16px' }}>
             <div className="flex justify-between items-center mb-6">
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <UserPlus size={18} className="text-blue-600" /> Referrals
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b' }}>
+                <UserPlus size={20} className="text-blue-600" /> Referrals
               </h3>
-              <button type="button" className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '12px', borderStyle: 'dashed' }} onClick={addReferral}>
-                <Plus size={14} /> Add
+              <button 
+                type="button" 
+                className="btn btn-outline" 
+                style={{ padding: '6px 12px', fontSize: '0.875rem', fontWeight: 600, borderStyle: 'dashed', borderColor: '#cbd5e1', color: '#475569', borderRadius: '8px', backgroundColor: 'white' }} 
+                onClick={addReferral}
+              >
+                <Plus size={16} style={{ marginRight: '4px' }} /> Add Referral
               </button>
             </div>
             
             {referrals.length === 0 ? (
-              <div style={{ padding: '1.5rem', border: '1px dashed #e2e8f0', borderRadius: '12px', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
-                No referrals assigned
+              <div style={{ padding: '2rem 1.5rem', backgroundColor: 'white', border: '1px dashed #cbd5e1', borderRadius: '12px', textAlign: 'center', color: '#64748b' }}>
+                <UserPlus size={32} style={{ margin: '0 auto 0.75rem', opacity: 0.3 }} />
+                <p style={{ margin: 0, fontSize: '0.875rem' }}>No referrals assigned to this voucher.</p>
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-4">
                 {referrals.map((ref, idx) => (
-                  <div key={idx} className="p-4" style={{ backgroundColor: 'white', border: '1px solid #f1f5f9', borderRadius: '12px', position: 'relative' }}>
-                    <button type="button" onClick={() => removeReferral(idx)} style={{ position: 'absolute', right: '10px', top: '10px', color: '#94a3b8' }} className="hover:text-red-500">
-                      <X size={14} />
+                  <div key={idx} style={{ backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', position: 'relative', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                    <button 
+                      type="button" 
+                      onClick={() => removeReferral(idx)} 
+                      style={{ position: 'absolute', right: '12px', top: '12px', color: '#cbd5e1', padding: '4px', borderRadius: '4px', transition: 'all 0.2s' }} 
+                      className="hover:bg-red-50 hover:text-red-500"
+                      title="Remove Referral"
+                    >
+                      <X size={16} />
                     </button>
                     
                     <div className="form-group mb-4">
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Referred By</label>
                       <select 
-                        className="form-control" required style={{ border: 'none', borderBottom: '2px solid #f1f5f9', borderRadius: 0, paddingLeft: 0, fontWeight: 700, color: '#1e293b' }}
+                        className="form-control" required 
+                        style={{ width: '100%', height: '42px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0 12px', fontWeight: 600, color: '#0f172a', fontSize: '0.95rem' }}
                         value={ref.referred_person_id}
                         onChange={(e) => updateReferral(idx, 'referred_person_id', e.target.value)}
                       >
-                        <option value="">Select Person...</option>
+                        <option value="">-- Select Person --</option>
                         {referredPersons.map(rp => <option key={rp.id} value={rp.id}>{rp.name}</option>)}
                       </select>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1rem', backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
                       <div>
-                        <label style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Comm %</label>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Rate (%)</label>
                         <div style={{ position: 'relative' }}>
                           <input 
-                            type="number" className="form-control" style={{ height: '36px', paddingRight: '20px', fontWeight: 700 }}
+                            type="number" className="form-control" 
+                            style={{ height: '38px', paddingRight: '28px', fontWeight: 700, fontSize: '0.95rem', border: '1px solid #cbd5e1', borderRadius: '6px' }}
                             value={ref.percentage}
                             onChange={(e) => updateReferral(idx, 'percentage', e.target.value)}
                           />
-                          <span style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '12px' }}>%</span>
+                          <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: '0.85rem', fontWeight: 600 }}>%</span>
                         </div>
                       </div>
                       <div>
-                        <label style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Amount (MMK)</label>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Amount (MMK)</label>
                         <input 
-                          type="number" className="form-control" style={{ height: '36px', fontWeight: 700, backgroundColor: '#f8fafc' }}
+                          type="number" className="form-control" 
+                          style={{ height: '38px', fontWeight: 800, fontSize: '1.05rem', color: '#059669', backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: '6px' }}
                           value={ref.amount}
                           onChange={(e) => updateReferral(idx, 'amount', e.target.value)}
                         />
@@ -555,6 +600,13 @@ export default function VoucherEntry({ onSave, onCancel }) {
         .shadow-sm { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); }
         .shadow-lg { box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); }
       `}} />
+
+      <AddPatientModal 
+        isOpen={isAddPatientModalOpen}
+        onClose={() => setIsAddPatientModalOpen(false)}
+        onSave={handleNewPatientSave}
+        apiBase={API_BASE}
+      />
     </div>
   );
 }

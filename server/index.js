@@ -189,6 +189,517 @@ app.delete('/api/master-data/:table/:id', validateTable, async (req, res) => {
   }
 });
 
+// --- Dashboard Analytics ---
+
+app.get('/api/dashboard/summary', async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const [
+      revenueToday,
+      revenueMonth,
+      patientsToday,
+      patientsMonth,
+      apptToday,
+      pendingReferrals,
+      lowStock,
+      expiringStock,
+      revenueTrend,
+      topItems,
+      recentVouchers,
+      patientTrend
+    ] = await Promise.all([
+      // Revenue Today
+      db.query('SELECT SUM(net_amount) as total FROM vouchers WHERE DATE(created_at) = $1', [today]),
+      // Revenue Month
+      db.query('SELECT SUM(net_amount) as total FROM vouchers WHERE DATE(created_at) >= $1', [firstDayOfMonth]),
+      // Patients Today (Distinct patients who had a voucher or appointment)
+      db.query(`
+        SELECT COUNT(DISTINCT patient_id) as count 
+        FROM (
+          SELECT patient_id FROM vouchers WHERE DATE(created_at) = $1
+          UNION
+          SELECT patient_id FROM appointments WHERE DATE(appointment_date) = $1
+        ) as combined`, [today]),
+      // Patients Month
+      db.query(`
+        SELECT COUNT(DISTINCT patient_id) as count 
+        FROM (
+          SELECT patient_id FROM vouchers WHERE DATE(created_at) >= $1
+          UNION
+          SELECT patient_id FROM appointments WHERE DATE(appointment_date) >= $1
+        ) as combined`, [firstDayOfMonth]),
+      // Appointments Today
+      db.query(`
+        SELECT 
+          COUNT(*) filter (where status = 'Scheduled') as scheduled,
+          COUNT(*) filter (where status = 'Completed') as completed,
+          COUNT(*) as total
+        FROM appointments WHERE DATE(appointment_date) = $1 AND is_active = true`, [today]),
+      // Pending Referral Payouts
+      db.query("SELECT SUM(amount) as total FROM voucher_referrals WHERE payment_status = 'Pending'"),
+      // Low Stock
+      db.query(`
+        SELECT COUNT(*) FROM (
+          SELECT si.id, si.min_stock_level, COALESCE(SUM(sb.quantity), 0) as total_qty
+          FROM stock_items si
+          LEFT JOIN stock_batches sb ON si.id = sb.item_id
+          WHERE si.is_active = true
+          GROUP BY si.id, si.min_stock_level
+          HAVING COALESCE(SUM(sb.quantity), 0) <= si.min_stock_level
+        ) as low_stock_items`),
+      // Expiring Stock (next 30 days)
+      db.query('SELECT COUNT(*) FROM stock_batches WHERE expiry_date >= CURRENT_DATE AND expiry_date <= $1 AND quantity > 0', [thirtyDaysFromNow]),
+      // Revenue Trend (last 7 days)
+      db.query(`
+        SELECT DATE(created_at) as date, SUM(net_amount) as amount 
+        FROM vouchers 
+        WHERE DATE(created_at) >= $1
+        GROUP BY DATE(created_at)
+        ORDER BY DATE(created_at) ASC`, [sevenDaysAgo]),
+      // Top Items This Month
+      db.query(`
+        SELECT name, SUM(quantity) as total_qty, SUM(subtotal) as total_revenue
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        WHERE DATE(v.created_at) >= $1
+        GROUP BY name
+        ORDER BY total_qty DESC
+        LIMIT 5`, [firstDayOfMonth]),
+      // Recent Vouchers
+      db.query(`
+        SELECT v.voucher_number, v.net_amount, v.created_at, p.name as patient_name
+        FROM vouchers v
+        JOIN patients p ON v.patient_id = p.id
+        ORDER BY v.created_at DESC
+        LIMIT 5`),
+      // Patient Trend (last 7 days)
+      db.query(`
+        SELECT DATE(v.created_at) as date, COUNT(DISTINCT v.patient_id) as count
+        FROM vouchers v
+        WHERE v.created_at >= $1
+        GROUP BY DATE(v.created_at)
+        ORDER BY date ASC`, [sevenDaysAgo])
+    ]);
+
+    res.json({
+      metrics: {
+        revenueToday: parseFloat(revenueToday.rows[0].total) || 0,
+        revenueMonth: parseFloat(revenueMonth.rows[0].total) || 0,
+        patientsToday: parseInt(patientsToday.rows[0].count) || 0,
+        patientsMonth: parseInt(patientsMonth.rows[0].count) || 0,
+        appointmentsToday: apptToday.rows[0],
+        pendingReferrals: parseFloat(pendingReferrals.rows[0].total) || 0,
+        lowStockCount: parseInt(lowStock.rows[0].count) || 0,
+        expiringStockCount: parseInt(expiringStock.rows[0].count) || 0
+      },
+      revenueTrend: revenueTrend.rows,
+      topItems: topItems.rows,
+      recentVouchers: recentVouchers.rows,
+      patientTrend: patientTrend.rows
+    });
+  } catch (err) {
+    console.error('DASHBOARD ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch dashboard data' });
+  }
+});
+
+// --- Reports Center APIs ---
+
+// GET: Revenue Reports
+app.get('/api/reports/revenue', async (req, res) => {
+  const { start_date, end_date } = req.query;
+  const start = start_date || new Date().toISOString().split('T')[0];
+  const end = (end_date || start) + ' 23:59:59';
+
+  const lastMonthStart = new Date(new Date(start).setMonth(new Date(start).getMonth() - 1)).toISOString().split('T')[0];
+  const lastMonthEnd = new Date(new Date(end).setMonth(new Date(end).getMonth() - 1)).toISOString().split('T')[0] + ' 23:59:59';
+
+  try {
+    const [
+      paymentBreakdown,
+      categoryBreakdown,
+      topMeds,
+      topServices,
+      topPackages,
+      dailyTrend,
+      currentRevenue,
+      lastMonthRevenue,
+      collectionDetail
+    ] = await Promise.all([
+      // 1. Payment Method Breakdown
+      db.query(`
+        SELECT payment_method, SUM(net_amount) as total
+        FROM vouchers 
+        WHERE created_at >= $1 AND created_at <= $2
+        GROUP BY payment_method`, [start, end]),
+      // 2. Category Breakdown
+      db.query(`
+        SELECT vi.item_type, SUM(vi.subtotal) as total
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2
+        GROUP BY vi.item_type`, [start, end]),
+      // 3. Top 10 Medicines
+      db.query(`
+        SELECT name, SUM(quantity) as qty, SUM(subtotal) as revenue
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2 AND vi.item_type = 'PHARMACY'
+        GROUP BY name ORDER BY revenue DESC LIMIT 10`, [start, end]),
+      // 4. Top 10 Services
+      db.query(`
+        SELECT name, SUM(quantity) as qty, SUM(subtotal) as revenue
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2 AND (vi.item_type = 'INVESTIGATION' OR vi.item_type = 'Service')
+        GROUP BY name ORDER BY revenue DESC LIMIT 10`, [start, end]),
+      // 5. Top 10 Packages
+      db.query(`
+        SELECT name, SUM(quantity) as qty, SUM(subtotal) as revenue
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2 AND vi.item_type = 'PACKAGE'
+        GROUP BY name ORDER BY revenue DESC LIMIT 10`, [start, end]),
+      // 6. Daily Trend
+      db.query(`
+        SELECT DATE(created_at) as date, SUM(net_amount) as amount
+        FROM vouchers
+        WHERE created_at >= $1 AND created_at <= $2
+        GROUP BY DATE(created_at)
+        ORDER BY DATE(created_at) ASC`, [start, end]),
+      // 7. Comparison: Current Total
+      db.query('SELECT SUM(net_amount) as total FROM vouchers WHERE created_at >= $1 AND created_at <= $2', [start, end]),
+      // 8. Comparison: Last Month Total
+      db.query('SELECT SUM(net_amount) as total FROM vouchers WHERE created_at >= $1 AND created_at <= $2', [lastMonthStart, lastMonthEnd]),
+      // 9. Detailed Daily Collection (Voucher-wise)
+      db.query(`
+        SELECT v.created_at as date, v.voucher_number, p.name as patient_name, 
+               v.total_amount, v.discount_amount, v.net_amount, v.payment_method
+        FROM vouchers v
+        JOIN patients p ON v.patient_id = p.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2
+        ORDER BY v.created_at DESC LIMIT 100`, [start, end])
+    ]);
+
+    res.json({
+      paymentBreakdown: paymentBreakdown.rows,
+      categoryBreakdown: categoryBreakdown.rows,
+      topMeds: topMeds.rows,
+      topServices: topServices.rows,
+      topPackages: topPackages.rows,
+      dailyTrend: dailyTrend.rows,
+      comparison: {
+        current: parseFloat(currentRevenue.rows[0].total) || 0,
+        previous: parseFloat(lastMonthRevenue.rows[0].total) || 0
+      },
+      collectionDetail: collectionDetail.rows
+    });
+  } catch (err) {
+    console.error('REVENUE REPORT ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch revenue report' });
+  }
+});
+
+// GET: Referral Reports
+app.get('/api/reports/referrals', async (req, res) => {
+  const { start_date, end_date } = req.query;
+  const start = start_date || new Date().toISOString().split('T')[0];
+  const end = (end_date || start) + ' 23:59:59';
+
+  try {
+    const [
+      performance,
+      payoutSummary,
+      physicianPerformance
+    ] = await Promise.all([
+      // Performance by Referrer (Physician/Agent)
+      db.query(`
+        SELECT rp.name, rp.organization, COUNT(vr.id) as total_referrals, SUM(vr.amount) as total_commission
+        FROM voucher_referrals vr
+        JOIN referred_persons rp ON vr.referred_person_id = rp.id
+        JOIN vouchers v ON vi.voucher_id = v.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2
+        GROUP BY rp.id, rp.name, rp.organization
+        ORDER BY total_commission DESC`, [start, end]),
+      // Payout Status Summary
+      db.query(`
+        SELECT vr.payment_status, SUM(vr.amount) as total
+        FROM voucher_referrals vr
+        JOIN vouchers v ON vr.voucher_id = v.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2
+        GROUP BY vr.payment_status`, [start, end]),
+      // Attending Physician Performance
+      db.query(`
+        SELECT doc.name as physician_name, COUNT(v.id) as patients_handled, SUM(v.net_amount) as revenue_generated
+        FROM vouchers v
+        JOIN physicians doc ON v.physician_id = doc.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2
+        GROUP BY doc.id, doc.name
+        ORDER BY revenue_generated DESC`, [start, end])
+    ]);
+
+    res.json({
+      performance: performance.rows,
+      payoutSummary: payoutSummary.rows,
+      physicianPerformance: physicianPerformance.rows
+    });
+  } catch (err) {
+    console.error('REFERRAL REPORT ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch referral report' });
+  }
+});
+
+// GET: Stock Reports
+app.get('/api/reports/stock', async (req, res) => {
+  const { start_date, end_date } = req.query;
+  const start = start_date || new Date().toISOString().split('T')[0];
+  const end = (end_date || start) + ' 23:59:59';
+  
+  try {
+    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const [
+      lowStock,
+      expiringSoon,
+      valuation,
+      stockMovement,
+      itemProfitability,
+      purchaseSummary
+    ] = await Promise.all([
+      // Detailed Low Stock
+      db.query(`
+        SELECT si.name, si.unit, si.min_stock_level, COALESCE(SUM(sb.quantity), 0) as current_qty
+        FROM stock_items si
+        LEFT JOIN stock_batches sb ON si.id = sb.item_id
+        WHERE si.is_active = true
+        GROUP BY si.id, si.name, si.unit, si.min_stock_level
+        HAVING COALESCE(SUM(sb.quantity), 0) <= si.min_stock_level
+        ORDER BY current_qty ASC`),
+      // Detailed Expiring Batches
+      db.query(`
+        SELECT si.name as item_name, sb.batch_number, sb.expiry_date, sb.quantity
+        FROM stock_batches sb
+        JOIN stock_items si ON sb.item_id = si.id
+        WHERE sb.expiry_date <= $1 AND sb.quantity > 0
+        ORDER BY sb.expiry_date ASC`, [thirtyDaysFromNow]),
+      // Inventory Valuation
+      db.query(`
+        SELECT SUM(quantity * purchase_price) as total_value 
+        FROM stock_batches 
+        WHERE quantity > 0`),
+      // Stock Movement (IN/OUT Log)
+      db.query(`
+        SELECT st.transaction_date as date, si.name as item_name, st.type, st.quantity, st.reason
+        FROM stock_transactions st
+        JOIN stock_items si ON st.item_id = si.id
+        WHERE st.transaction_date >= $1 AND st.transaction_date <= $2
+        ORDER BY st.transaction_date DESC`, [start, end]),
+      // Item Profitability
+      db.query(`
+        SELECT 
+          si.name, si.unit, 
+          si.default_purchase_price as p_price, 
+          si.default_sale_price as s_price,
+          (si.default_sale_price - si.default_purchase_price) as margin_amt,
+          CASE WHEN si.default_sale_price > 0 
+               THEN ROUND(((si.default_sale_price - si.default_purchase_price) / si.default_sale_price) * 100, 2)
+               ELSE 0 END as margin_pct
+        FROM stock_items si
+        WHERE si.is_active = true
+        ORDER BY margin_amt DESC LIMIT 20`),
+      // Purchase Summary by Supplier
+      db.query(`
+        SELECT s.company_name as supplier, COUNT(p.id) as invoice_count, SUM(p.total_amount) as total_purchased
+        FROM purchases p
+        JOIN suppliers s ON p.supplier_id = s.id
+        WHERE p.created_at >= $1 AND p.created_at <= $2
+        GROUP BY s.id, s.company_name
+        ORDER BY total_purchased DESC`, [start, end])
+    ]);
+
+    res.json({
+      lowStock: lowStock.rows,
+      expiringSoon: expiringSoon.rows,
+      valuation: parseFloat(valuation.rows[0].total_value) || 0,
+      stockMovement: stockMovement.rows,
+      itemProfitability: itemProfitability.rows,
+      purchaseSummary: purchaseSummary.rows
+    });
+  } catch (err) {
+    console.error('STOCK REPORT ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch stock report' });
+  }
+});
+
+// GET: Patient Reports
+app.get('/api/reports/patients', async (req, res) => {
+  const { start_date, end_date } = req.query;
+  const start = start_date || new Date().toISOString().split('T')[0];
+  const end = (end_date || start) + ' 23:59:59';
+
+  try {
+    const [
+      newPatients,
+      topPatients,
+      genderStats,
+      returningPatients,
+      visitHistory
+    ] = await Promise.all([
+      // New Patients Registered
+      db.query('SELECT COUNT(*) FROM patients WHERE created_at >= $1 AND created_at <= $2', [start, end]),
+      // Top Patients by Spend
+      db.query(`
+        SELECT p.name, p.patient_code, COUNT(v.id) as visits, SUM(v.net_amount) as total_spent
+        FROM vouchers v
+        JOIN patients p ON v.patient_id = p.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2
+        GROUP BY p.id, p.name, p.patient_code
+        ORDER BY total_spent DESC
+        LIMIT 10`, [start, end]),
+      // Gender Breakdown
+      db.query('SELECT gender, COUNT(*) FROM patients GROUP BY gender'),
+      // Returning Patients
+      db.query(`
+        SELECT COUNT(DISTINCT v1.patient_id) as count
+        FROM vouchers v1
+        WHERE v1.created_at >= $1 AND v1.created_at <= $2
+        AND EXISTS (
+          SELECT 1 FROM vouchers v2 
+          WHERE v2.patient_id = v1.patient_id 
+          AND v2.created_at < $1
+        )`, [start, end]),
+      // Visit History Log
+      db.query(`
+        SELECT v.created_at as date, p.name as patient_name, p.patient_code, v.voucher_number, v.net_amount
+        FROM vouchers v
+        JOIN patients p ON v.patient_id = p.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2
+        ORDER BY v.created_at DESC LIMIT 50`, [start, end])
+    ]);
+
+    res.json({
+      newPatientsCount: parseInt(newPatients.rows[0].count) || 0,
+      returningPatientsCount: parseInt(returningPatients.rows[0].count) || 0,
+      topPatients: topPatients.rows,
+      genderStats: genderStats.rows,
+      visitHistory: visitHistory.rows
+    });
+  } catch (err) {
+    console.error('PATIENT REPORT ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch patient report' });
+  }
+});
+
+// GET: Appointment Reports
+app.get('/api/reports/appointments', async (req, res) => {
+  const { start_date, end_date } = req.query;
+  const start = start_date || new Date().toISOString().split('T')[0];
+  const end = (end_date || start) + ' 23:59:59';
+
+  try {
+    const [
+      statusBreakdown,
+      doctorWorkload,
+      appointmentList
+    ] = await Promise.all([
+      // Status Breakdown
+      db.query(`
+        SELECT status, COUNT(*) 
+        FROM appointments 
+        WHERE appointment_date >= $1 AND appointment_date <= $2 AND is_active = true
+        GROUP BY status`, [start, end]),
+      // Doctor Workload
+      db.query(`
+        SELECT doc.name as physician_name, COUNT(a.id) as total_appointments
+        FROM appointments a
+        JOIN physicians doc ON a.physician_id = doc.id
+        WHERE a.appointment_date >= $1 AND a.appointment_date <= $2 AND a.is_active = true
+        GROUP BY doc.id, doc.name
+        ORDER BY total_appointments DESC`, [start, end]),
+      // Detailed List
+      db.query(`
+        SELECT a.appointment_date as date, p.name as patient_name, doc.name as physician_name, a.status, a.reason
+        FROM appointments a
+        JOIN patients p ON a.patient_id = p.id
+        JOIN physicians doc ON a.physician_id = doc.id
+        WHERE a.appointment_date >= $1 AND a.appointment_date <= $2 AND a.is_active = true
+        ORDER BY a.appointment_date ASC`, [start, end])
+    ]);
+
+    res.json({
+      statusBreakdown: statusBreakdown.rows,
+      doctorWorkload: doctorWorkload.rows,
+      appointmentList: appointmentList.rows
+    });
+  } catch (err) {
+    console.error('APPOINTMENT REPORT ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch appointment report' });
+  }
+});
+
+// GET: Financial Reports
+app.get('/api/reports/financial', async (req, res) => {
+  const { start_date, end_date } = req.query;
+  const start = start_date || new Date().toISOString().split('T')[0];
+  const end = (end_date || start) + ' 23:59:59';
+
+  try {
+    const [
+      revenue,
+      purchaseCost,
+      outstandingPurchases,
+      paymentMethodStats,
+      packageProfitability
+    ] = await Promise.all([
+      // Total Revenue
+      db.query('SELECT SUM(net_amount) as total FROM vouchers WHERE created_at >= $1 AND created_at <= $2', [start, end]),
+      // Total Purchase Cost (Approx based on default prices for simplicity)
+      db.query(`
+        SELECT SUM(vi.quantity * si.default_purchase_price) as total_cost
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        JOIN stock_items si ON vi.item_id = si.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2 AND vi.item_type = 'PHARMACY'`, [start, end]),
+      // Outstanding Balance (Purchases)
+      db.query('SELECT SUM(balance_amount) as total FROM purchases WHERE created_at >= $1 AND created_at <= $2', [start, end]),
+      // Payment Method Stats
+      db.query(`
+        SELECT payment_method, COUNT(*) as count, SUM(net_amount) as total
+        FROM vouchers
+        WHERE created_at >= $1 AND created_at <= $2
+        GROUP BY payment_method`, [start, end]),
+      // Package Profitability
+      db.query(`
+        SELECT 
+          gp.name, 
+          COUNT(vi.id) as usage_count, 
+          SUM(vi.subtotal) as total_revenue,
+          gp.price as unit_price
+        FROM voucher_items vi
+        JOIN gp_packages gp ON vi.item_id = gp.id
+        JOIN vouchers v ON vi.voucher_id = v.id
+        WHERE vi.item_type = 'PACKAGE' AND v.created_at >= $1 AND v.created_at <= $2
+        GROUP BY gp.id, gp.name, gp.price
+        ORDER BY usage_count DESC`, [start, end])
+    ]);
+
+    res.json({
+      totalRevenue: parseFloat(revenue.rows[0].total) || 0,
+      totalPurchaseCost: parseFloat(purchaseCost.rows[0].total_cost) || 0,
+      outstandingPurchases: parseFloat(outstandingPurchases.rows[0].total) || 0,
+      paymentMethodStats: paymentMethodStats.rows,
+      packageProfitability: packageProfitability.rows
+    });
+  } catch (err) {
+    console.error('FINANCIAL REPORT ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch financial report' });
+  }
+});
+
 // --- Reception Module Routes ---
 
 // Patient Search
@@ -620,6 +1131,64 @@ app.post('/api/stock/sell', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Sale transaction failed' });
+  }
+});
+
+// Manual Stock Adjustment
+app.post('/api/stock/adjust', async (req, res) => {
+  const { item_id, adjustment_qty, reason, type } = req.body; // type: 'ADJUST'
+  if (!item_id || !adjustment_qty) return res.status(400).json({ error: 'Invalid data' });
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const qty = parseInt(adjustment_qty);
+
+    if (qty > 0) {
+      // Increase: Create a dummy batch for adjustment (or add to latest)
+      const batchRes = await client.query(`
+        INSERT INTO stock_batches (item_id, batch_number, quantity, purchase_price, sale_price)
+        VALUES ($1, $2, $3, (SELECT default_purchase_price FROM stock_items WHERE id = $1), (SELECT default_sale_price FROM stock_items WHERE id = $1))
+        RETURNING id
+      `, [item_id, 'ADJ-' + Date.now(), qty]);
+      
+      await client.query(
+        'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
+        [item_id, batchRes.rows[0].id, 'ADJUST', qty, reason || 'Manual Correction (+)']
+      );
+    } else {
+      // Decrease: Use FEFO logic to deduct
+      const batchesRes = await client.query(
+        'SELECT * FROM stock_batches WHERE item_id = $1 AND quantity > 0 ORDER BY expiry_date ASC NULLS LAST',
+        [item_id]
+      );
+
+      let remainingToDeduct = Math.abs(qty);
+      for (const batch of batchesRes.rows) {
+        if (remainingToDeduct <= 0) break;
+        const takeFromThisBatch = Math.min(batch.quantity, remainingToDeduct);
+        await client.query('UPDATE stock_batches SET quantity = quantity - $1 WHERE id = $2', [takeFromThisBatch, batch.id]);
+        await client.query(
+          'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
+          [item_id, batch.id, 'ADJUST', -takeFromThisBatch, reason || 'Manual Correction (-)']
+        );
+        remainingToDeduct -= takeFromThisBatch;
+      }
+      
+      if (remainingToDeduct > 0) {
+        throw new Error('Not enough stock to deduct requested amount');
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Stock adjusted successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Adjustment failed' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1165,6 +1734,124 @@ app.put('/api/investigations/:id/status', async (req, res) => {
     res.status(500).json({ error: 'Failed to update status' });
   }
 });
+// --- Laboratory Specific Test Pricing ---
+
+// GET: All investigation items with their pricing for a specific lab
+app.get('/api/laboratories/:id/test-pricing', async (req, res) => {
+  const labId = req.params.id;
+  try {
+    const query = `
+      SELECT si.id as item_id, si.name, si.item_code,
+             COALESCE(ltp.purchase_price, si.default_purchase_price) as purchase_price,
+             COALESCE(ltp.commission_percentage, 0.00) as commission_percentage,
+             ltp.id as pricing_id
+      FROM stock_items si
+      JOIN item_subcategories isc ON si.subcategory_id = isc.id
+      JOIN item_categories ic ON isc.category_id = ic.id
+      LEFT JOIN laboratory_test_pricing ltp ON si.id = ltp.item_id AND ltp.laboratory_id = $1
+      WHERE ic.name ILIKE '%Laboratory Test%' AND si.is_active = true
+      ORDER BY si.name ASC
+    `;
+    const result = await db.query(query, [labId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('FETCH LAB TEST PRICING ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch laboratory test pricing' });
+  }
+});
+
+// POST: Update specific test pricing for a lab
+app.post('/api/laboratories/:id/test-pricing', async (req, res) => {
+  const labId = req.params.id;
+  const { item_id, purchase_price, commission_percentage } = req.body;
+  
+  try {
+    const query = `
+      INSERT INTO laboratory_test_pricing (laboratory_id, item_id, purchase_price, commission_percentage, updated_at)
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+      ON CONFLICT (laboratory_id, item_id) 
+      DO UPDATE SET 
+        purchase_price = EXCLUDED.purchase_price,
+        commission_percentage = EXCLUDED.commission_percentage,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *;
+    `;
+    const result = await db.query(query, [labId, item_id, purchase_price, commission_percentage]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('UPDATE LAB TEST PRICING ERROR:', err);
+    res.status(500).json({ error: 'Failed to update laboratory test pricing' });
+  }
+});
+
+// GET: Laboratory Payments (Investigations filtered by lab, status, and date)
+app.get('/api/lab-payments', async (req, res) => {
+  const { laboratory_id, payment_status, from_date, to_date } = req.query;
+  
+  let query = `
+    SELECT vi.id, vi.name, vi.quantity, vi.unit_price, vi.subtotal, 
+           vi.lab_payment_status, vi.lab_paid_at,
+           v.voucher_number, v.created_at as voucher_date,
+           p.name as patient_name, l.name as laboratory_name,
+           COALESCE(ltp.purchase_price, vi.lab_cost_price) as lab_cost_price,
+           COALESCE(ltp.commission_percentage, vi.lab_commission_pct) as lab_commission_pct
+    FROM voucher_items vi
+    JOIN vouchers v ON vi.voucher_id = v.id
+    LEFT JOIN patients p ON v.patient_id = p.id
+    LEFT JOIN laboratories l ON vi.laboratory_id = l.id
+    LEFT JOIN laboratory_test_pricing ltp ON vi.item_id = ltp.item_id AND vi.laboratory_id = ltp.laboratory_id
+    WHERE vi.item_type = 'INVESTIGATION'
+  `;
+  const params = [];
+
+  if (laboratory_id) {
+    params.push(laboratory_id);
+    query += ` AND vi.laboratory_id = $${params.length}`;
+  }
+  if (payment_status) {
+    params.push(payment_status);
+    query += ` AND vi.lab_payment_status = $${params.length}`;
+  }
+  if (from_date) {
+    params.push(from_date);
+    query += ` AND v.created_at >= $${params.length}`;
+  }
+  if (to_date) {
+    params.push(to_date + ' 23:59:59');
+    query += ` AND v.created_at <= $${params.length}`;
+  }
+
+  query += ` ORDER BY v.created_at DESC`;
+
+  try {
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('FETCH LAB PAYMENTS ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch lab payments' });
+  }
+});
+
+// POST: Bulk pay laboratories
+app.post('/api/lab-payments/bulk-pay', async (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No investigation IDs provided' });
+  }
+
+  try {
+    await db.query(`
+      UPDATE voucher_items 
+      SET lab_payment_status = 'Paid', lab_paid_at = CURRENT_TIMESTAMP 
+      WHERE id = ANY($1::int[])
+    `, [ids]);
+    res.json({ message: `${ids.length} investigations marked as paid to lab` });
+  } catch (err) {
+    console.error('BULK LAB PAY ERROR:', err);
+    res.status(500).json({ error: 'Failed to process bulk lab payment' });
+  }
+});
+
 // POST: Upload investigation result
 app.post('/api/investigations/:id/upload', upload.single('file'), async (req, res) => {
   const { id } = req.params;
@@ -1194,7 +1881,7 @@ app.post('/api/investigations/:id/upload', upload.single('file'), async (req, re
 // POST: Create Voucher
 app.post('/api/billing/vouchers', async (req, res) => {
   const { 
-    patient_id, items, referrals, 
+    patient_id, physician_id, items, referrals, 
     total_amount, discount_amount, net_amount, 
     payment_method, notes 
   } = req.body;
@@ -1211,18 +1898,53 @@ app.post('/api/billing/vouchers', async (req, res) => {
 
     // 1. Insert Voucher
     const vRes = await client.query(`
-      INSERT INTO vouchers (voucher_number, patient_id, total_amount, discount_amount, net_amount, payment_method, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO vouchers (voucher_number, patient_id, physician_id, total_amount, discount_amount, net_amount, payment_method, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING id
-    `, [voucher_number, patient_id, total_amount, discount_amount, net_amount, payment_method, notes]);
+    `, [voucher_number, patient_id, physician_id || null, total_amount, discount_amount, net_amount, payment_method, notes]);
     const voucherId = vRes.rows[0].id;
 
     // 2. Insert Items & Deduct Stock
     for (const item of items) {
+      let labCostPrice = item.lab_cost_price || 0;
+      let labCommissionPct = item.lab_commission_pct || 0;
+      let labPaymentStatus = 'N/A';
+
+      if (item.item_type === 'INVESTIGATION') {
+        labPaymentStatus = 'Pending';
+        
+        // If cost or commission not provided by frontend, fetch from DB
+        if (labCostPrice === 0 || labCommissionPct === 0) {
+           if (item.laboratory_id) {
+              // Try to find specific pricing for this lab and test
+              const specificRes = await client.query(
+                'SELECT purchase_price, commission_percentage FROM laboratory_test_pricing WHERE laboratory_id = $1 AND item_id = $2',
+                [item.laboratory_id, item.item_id]
+              );
+              
+              if (specificRes.rows.length > 0) {
+                if (labCostPrice === 0) labCostPrice = parseFloat(specificRes.rows[0].purchase_price);
+                if (labCommissionPct === 0) labCommissionPct = parseFloat(specificRes.rows[0].commission_percentage);
+              } else {
+                // Use default item purchase price and lab default commission
+                const itemRes = await client.query('SELECT default_purchase_price FROM stock_items WHERE id = $1', [item.item_id]);
+                const labRes = await client.query('SELECT commission_percentage FROM laboratories WHERE id = $1', [item.laboratory_id]);
+                
+                if (labCostPrice === 0 && itemRes.rows.length > 0) labCostPrice = parseFloat(itemRes.rows[0].default_purchase_price);
+                if (labCommissionPct === 0 && labRes.rows.length > 0) labCommissionPct = parseFloat(labRes.rows[0].commission_percentage);
+              }
+           } else {
+             // No lab selected, just use default item price
+             const itemRes = await client.query('SELECT default_purchase_price FROM stock_items WHERE id = $1', [item.item_id]);
+             if (labCostPrice === 0 && itemRes.rows.length > 0) labCostPrice = parseFloat(itemRes.rows[0].default_purchase_price);
+           }
+        }
+      }
+
       await client.query(`
-        INSERT INTO voucher_items (voucher_id, item_type, item_id, name, quantity, unit_price, subtotal, laboratory_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      `, [voucherId, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id]);
+        INSERT INTO voucher_items (voucher_id, item_type, item_id, name, quantity, unit_price, subtotal, laboratory_id, lab_cost_price, lab_commission_pct, lab_payment_status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `, [voucherId, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id || null, labCostPrice, labCommissionPct, labPaymentStatus]);
 
       if (item.item_type === 'PHARMACY') {
         await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`);
@@ -1254,6 +1976,87 @@ app.post('/api/billing/vouchers', async (req, res) => {
     res.status(500).json({ error: 'Failed to create voucher', details: err.message });
   } finally {
     client.release();
+  }
+});
+
+// GET: All referrals (with filters)
+app.get('/api/billing/referrals', async (req, res) => {
+  const { referred_person_id, from_date, to_date, payment_status } = req.query;
+  
+  let query = `
+    SELECT vr.*, rp.name as referred_person_name, v.voucher_number, v.created_at as voucher_date
+    FROM voucher_referrals vr
+    LEFT JOIN referred_persons rp ON vr.referred_person_id = rp.id
+    LEFT JOIN vouchers v ON vr.voucher_id = v.id
+    WHERE 1=1
+  `;
+  const params = [];
+
+  if (referred_person_id) {
+    params.push(referred_person_id);
+    query += ` AND vr.referred_person_id = $${params.length}`;
+  }
+
+  if (from_date) {
+    params.push(from_date);
+    query += ` AND v.created_at >= $${params.length}`;
+  }
+
+  if (to_date) {
+    params.push(to_date + ' 23:59:59');
+    query += ` AND v.created_at <= $${params.length}`;
+  }
+
+  if (payment_status) {
+    params.push(payment_status);
+    query += ` AND vr.payment_status = $${params.length}`;
+  }
+
+  query += ` ORDER BY v.created_at DESC`;
+
+  try {
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('FETCH REFERRALS ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch referrals' });
+  }
+});
+
+// POST: Mark referral as paid
+app.post('/api/billing/referrals/:id/pay', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query(`
+      UPDATE voucher_referrals 
+      SET payment_status = 'Paid', paid_at = CURRENT_TIMESTAMP 
+      WHERE id = $1
+    `, [id]);
+    res.json({ message: 'Referral marked as paid' });
+  } catch (err) {
+    console.error('PAY REFERRAL ERROR:', err);
+    res.status(500).json({ error: 'Failed to process payment' });
+  }
+});
+
+// POST: Mark multiple referrals as paid
+app.post('/api/billing/referrals/bulk-pay', async (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No referral IDs provided' });
+  }
+
+  try {
+    // using ANY($1::int[]) is standard for arrays in pg
+    await db.query(`
+      UPDATE voucher_referrals 
+      SET payment_status = 'Paid', paid_at = CURRENT_TIMESTAMP 
+      WHERE id = ANY($1::int[])
+    `, [ids]);
+    res.json({ message: `${ids.length} referrals marked as paid` });
+  } catch (err) {
+    console.error('BULK PAY REFERRALS ERROR:', err);
+    res.status(500).json({ error: 'Failed to process bulk payment' });
   }
 });
 

@@ -18,6 +18,7 @@ export default function StockManagement() {
   // Modals
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
   // Form States
@@ -28,6 +29,12 @@ export default function StockManagement() {
   const [editForm, setEditForm] = useState({ 
     subcategory_id: '', item_code: '', name: '', unit: '', min_stock_level: 0,
     default_purchase_price: 0, default_sale_price: 0
+  });
+  const [adjustForm, setAdjustForm] = useState({
+    item_id: '',
+    adjustment_qty: 0,
+    reason: '',
+    type: 'ADJUST'
   });
   const [modalSelectedCategoryId, setModalSelectedCategoryId] = useState('');
   const [editModalSelectedCategoryId, setEditModalSelectedCategoryId] = useState('');
@@ -221,6 +228,42 @@ export default function StockManagement() {
     }
   };
 
+  const handleAdjustStock = async (e) => {
+    e.preventDefault();
+    if (!adjustForm.adjustment_qty || adjustForm.adjustment_qty == 0) {
+      alert("Please enter a non-zero adjustment quantity");
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/stock/adjust`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(adjustForm)
+      });
+      if (res.ok) {
+        setIsAdjustModalOpen(false);
+        setAdjustForm({ item_id: '', adjustment_qty: 0, reason: '', type: 'ADJUST' });
+        fetchItems();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Adjustment failed");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const openAdjustModal = (item) => {
+    setSelectedItem(item);
+    setAdjustForm({
+      item_id: item.id,
+      adjustment_qty: 0,
+      reason: '',
+      type: 'ADJUST'
+    });
+    setIsAdjustModalOpen(true);
+  };
+
   const handleDeleteItem = async (id) => {
     if (!window.confirm("Are you sure you want to delete this item?")) return;
     try {
@@ -326,6 +369,16 @@ export default function StockManagement() {
                         </td>
                         <td>
                           <div className="actions" style={{ justifyContent: 'center', gap: '0.5rem' }}>
+                            {item.category_name === 'Pharmacy' && (
+                              <button 
+                                className="btn btn-outline" 
+                                style={{ padding: '0.25rem 0.5rem', color: '#10b981', borderColor: '#10b981' }}
+                                onClick={() => openAdjustModal(item)}
+                                title="Adjust Stock"
+                              >
+                                Adjust
+                              </button>
+                            )}
                             <button 
                               className="btn btn-outline" 
                               style={{ padding: '0.25rem 0.5rem', color: '#2563eb' }}
@@ -581,6 +634,61 @@ export default function StockManagement() {
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setIsEditModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">Update Item</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Stock Adjustment */}
+      {isAdjustModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '450px' }}>
+            <div className="modal-header">
+              <h2 className="modal-title">Manual Stock Adjustment</h2>
+              <button className="close-btn" onClick={() => setIsAdjustModalOpen(false)}><X size={24} /></button>
+            </div>
+            <form onSubmit={handleAdjustStock} style={{ padding: '1.5rem' }}>
+              <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '12px', marginBottom: '1.5rem', border: '1px solid #e2e8f0' }}>
+                 <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>Item Name</p>
+                 <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem' }}>{selectedItem?.name}</p>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
+                    <span>Current Stock:</span>
+                    <strong>{selectedItem?.total_quantity} {selectedItem?.unit}</strong>
+                 </div>
+              </div>
+
+              <div className="form-group mb-4">
+                <label className="form-label">Adjustment Quantity</label>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                   <input 
+                    type="number" className="form-control" required 
+                    placeholder="e.g. 10 or -5"
+                    value={adjustForm.adjustment_qty}
+                    onChange={e => setAdjustForm({...adjustForm, adjustment_qty: e.target.value})}
+                   />
+                   <span style={{ fontWeight: 600 }}>{selectedItem?.unit}</span>
+                </div>
+                <small style={{ color: '#64748b', display: 'block', marginTop: '0.5rem' }}>
+                  Use <strong>positive</strong> numbers to add stock, and <strong>negative</strong> numbers to deduct (e.g., damage).
+                </small>
+              </div>
+
+              <div className="form-group mb-6">
+                <label className="form-label">Reason for Adjustment</label>
+                <textarea 
+                  className="form-control" required rows="3"
+                  placeholder="e.g. Expired items removal, Inventory recount correction..."
+                  value={adjustForm.reason}
+                  onChange={e => setAdjustForm({...adjustForm, reason: e.target.value})}
+                />
+              </div>
+
+              <div className="form-actions">
+                <button type="button" className="btn btn-outline" onClick={() => setIsAdjustModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}>
+                  Apply Adjustment
+                </button>
               </div>
             </form>
           </div>

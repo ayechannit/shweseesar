@@ -1,0 +1,155 @@
+🧠 1. Executive Dashboard (Top Priority)
+
+This is your main screen after login.
+
+📊 Key Metrics
+Today Revenue
+Monthly Revenue
+Number of Patients (Today / Month)
+Appointments Today
+Pending Payments
+Stock Alerts (Low / Expiring)
+📈 Charts
+Revenue Trend (last 7 / 30 days)
+Patient Visit Trend
+Top Services / Items
+
+👉 This is your decision-making dashboard
+
+💰 2. Revenue Reports (MOST IMPORTANT)
+💵 2.1 Daily Collection Report
+Date
+Total Sales
+Discount
+Net Amount
+Payment Breakdown (Cash / KPay)
+
+👉 Used by cashier every day
+
+📅 2.2 Monthly Revenue Report
+Revenue per day
+Growth %
+Comparison with last month
+🧾 2.3 Revenue by Category
+Pharmacy
+Service
+Laboratory
+Package
+
+👉 Requires grouping by:
+
+voucher_items.item_type
+🏆 2.4 Top Revenue Items
+Top 10 medicines
+Top 10 services
+Top packages
+👨‍⚕️ 3. Doctor / Referral Reports
+🧑‍⚕️ 3.1 Physician Performance
+Patients handled
+Revenue generated
+Referrals given
+🤝 3.2 Referral Commission Report
+Referred person
+Total referred cases
+Total commission amount
+
+👉 Based on:
+
+voucher_referrals
+💸 3.3 Referral Payout Report
+Pending payments
+Paid commissions
+👥 4. Patient Reports
+🧾 4.1 Patient Visit History
+Patient
+Visits
+Total spent
+🔁 4.2 Returning vs New Patients
+New patients
+Repeat visits
+
+👉 Very important KPI
+
+🧓 4.3 Patient Demographics
+Age group
+Gender (if added later)
+📦 5. Stock & Inventory Reports (CRITICAL)
+⚠️ 5.1 Low Stock Report
+Item
+Current quantity
+Minimum level
+⏳ 5.2 Expiry (FEFO) Report
+Batch
+Expiry date
+Quantity
+
+👉 This is one of your strongest features
+
+📥 5.3 Purchase Report
+Supplier
+Items purchased
+Total cost
+📤 5.4 Stock Movement Report
+IN / OUT / ADJUST
+Item-wise tracking
+
+👉 Based on:
+
+stock_transactions
+💰 5.5 Profit Report (VERY IMPORTANT)
+Purchase price vs Sale price
+Profit margin per item
+📅 6. Appointment Reports
+📆 6.1 Daily Appointment List
+Doctor
+Patients
+Status
+❌ 6.2 No-show Report
+Missed appointments
+🧑‍⚕️ 6.3 Doctor Workload
+Appointments per doctor
+🧾 7. Financial Reports (Advanced)
+📊 7.1 Profit & Loss (P&L)
+Revenue
+Cost (purchase)
+Profit
+💳 7.2 Payment Method Report
+Cash vs KPay ratio
+🧮 7.3 Outstanding Payments
+Unpaid vouchers
+Partial payments
+🧩 8. Package Reports
+📦 8.1 Package Usage Report
+Most used packages
+Revenue per package
+🔍 8.2 Package Profitability
+Cost vs selling price
+🧠 9. Smart Insights (Advanced / AI-ready)
+
+These make your system premium-level
+
+📈 Trends
+Most common diseases (if diagnosis added)
+Peak hours / days
+🔮 Predictions
+Stock prediction (when to reorder)
+Patient revisit prediction
+🧾 10. Audit & Activity Reports
+🕵️ 10.1 User Activity
+Who created vouchers
+Who edited stock
+⚠️ 10.2 Adjustment Report
+Manual stock changes
+🏆 Suggested Dashboard Layout
+Top Row
+Revenue Today
+Patients Today
+Appointments Today
+Low Stock Alerts
+Middle
+Revenue Chart
+Patient Trend
+Bottom
+Top Items
+Expiring Stock
+Recent Vouchers

@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Search, UserPlus, Clock, X, Check, Search as SearchIcon } from 'lucide-react';
+import { Calendar, Search, UserPlus, Clock, X, Check, Search as SearchIcon, Plus } from 'lucide-react';
+import AddPatientModal from '../../components/Modals/AddPatientModal';
 
 const API_BASE = 'http://localhost:5000/api';
 
 export default function ReceptionDashboard() {
   const [activeTab, setActiveTab] = useState('appointments'); // 'appointments' or 'search'
+  
+  // --- New Patient Modal ---
+  const [isPatientModalOpen, setIsPatientModalOpen] = useState(false);
   
   // --- Appointments Pagination ---
   const [apptPage, setApptPage] = useState(1);
@@ -146,11 +150,20 @@ export default function ReceptionDashboard() {
     }
   };
 
+  const handleNewPatientSave = (newPatient) => {
+    setPatients(prev => [newPatient, ...prev]);
+    setApptForm(prev => ({ ...prev, patient_id: newPatient.id }));
+    setIsApptModalOpen(true);
+  };
+
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">Reception Dashboard</h1>
-        <div className="header-actions">
+        <div className="header-actions" style={{ display: 'flex', gap: '0.75rem' }}>
+          <button className="btn btn-outline" onClick={() => setIsPatientModalOpen(true)}>
+            <UserPlus size={16} /> Quick Register
+          </button>
           <button className="btn btn-primary" onClick={() => openApptModal()}>
             <Calendar size={16} /> Book Appointment
           </button>
@@ -402,6 +415,13 @@ export default function ReceptionDashboard() {
           </div>
         </div>
       )}
+
+      <AddPatientModal 
+        isOpen={isPatientModalOpen}
+        onClose={() => setIsPatientModalOpen(false)}
+        onSave={handleNewPatientSave}
+        apiBase={API_BASE}
+      />
     </div>
   );
 }

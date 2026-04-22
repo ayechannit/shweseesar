@@ -81,6 +81,7 @@ export const masterDataConfig = {
     table: 'laboratories',
     fields: [
       { name: 'name', label: 'Laboratory Name', type: 'text', required: true },
+      { name: 'commission_percentage', label: 'Default Commission (%)', type: 'number', required: false },
       { name: 'contact_person', label: 'Contact Person', type: 'text', required: false },
       { name: 'phone_number', label: 'Phone Number', type: 'text', required: false },
       { name: 'address', label: 'Address', type: 'text', required: false },
