@@ -36,7 +36,8 @@ const ALLOWED_TABLES = [
   'referred_persons',
   'item_categories',
   'item_subcategories',
-  'laboratories'
+  'laboratories',
+  'refer_clinics'
 ];
 
 // Helper function to validate table name
@@ -118,8 +119,8 @@ app.post('/api/master-data/:table', validateTable, async (req, res) => {
     const result = await db.query(query, values);
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to insert record' });
+    console.error('Master Data POST Error:', err);
+    res.status(500).json({ error: 'Failed to insert record', details: err.message });
   }
 });
 
@@ -189,7 +190,410 @@ app.delete('/api/master-data/:table/:id', validateTable, async (req, res) => {
   }
 });
 
+// --- Clinic Referral Transactions Routes ---
+
+// GET: All clinic referral transactions
+app.get('/api/clinic-referral-transactions', async (req, res) => {
+  const { page = 1, limit = 10, refer_clinic_id, patient_name, visit_type, from_date, to_date, payment_status } = req.query;
+  const offset = (page - 1) * limit;
+
+  try {
+    let baseQuery = `
+      FROM clinic_referral_transactions crt
+      JOIN patients p ON crt.patient_id = p.id
+      JOIN refer_clinics rc ON crt.refer_clinic_id = rc.id
+      WHERE crt.is_active = true
+    `;
+    const params = [];
+
+    if (refer_clinic_id) {
+      params.push(refer_clinic_id);
+      baseQuery += ` AND crt.refer_clinic_id = $${params.length}`;
+    }
+    if (patient_name) {
+      params.push(`%${patient_name}%`);
+      baseQuery += ` AND p.name ILIKE $${params.length}`;
+    }
+    if (visit_type) {
+      if (visit_type === 'PENDING') {
+        baseQuery += ` AND crt.visit_type IS NULL`;
+      } else {
+        params.push(visit_type);
+        baseQuery += ` AND crt.visit_type = $${params.length}`;
+      }
+    }
+    if (payment_status) {
+      params.push(payment_status);
+      baseQuery += ` AND crt.payment_status = $${params.length}`;
+    }
+    if (from_date) {
+      params.push(from_date);
+      baseQuery += ` AND crt.created_at >= $${params.length}`;
+    }
+    if (to_date) {
+      params.push(to_date + ' 23:59:59');
+      baseQuery += ` AND crt.created_at <= $${params.length}`;
+    }
+
+    const countRes = await db.query(`SELECT COUNT(*) ${baseQuery}`, params);
+    const total = parseInt(countRes.rows[0].count);
+
+    // Calculate totals
+    const sumQuery = `
+      SELECT 
+        SUM(CASE WHEN crt.payment_status = 'Paid' THEN crt.commission_amount ELSE 0 END) as total_paid,
+        SUM(CASE WHEN crt.payment_status = 'Pending' THEN crt.commission_amount ELSE 0 END) as total_unpaid
+      ${baseQuery}
+    `;
+    const sumRes = await db.query(sumQuery, params);
+    const summary = {
+      paid: parseFloat(sumRes.rows[0].total_paid) || 0,
+      unpaid: parseFloat(sumRes.rows[0].total_unpaid) || 0
+    };
+
+    const dataQuery = `
+      SELECT crt.*, p.name as patient_name, rc.name as refer_clinic_name
+      ${baseQuery}
+      ORDER BY crt.created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
+
+    const result = await db.query(dataQuery, [...params, limit, offset]);
+
+    res.json({
+      data: result.rows,
+      summary,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (err) {
+    console.error('FETCH CLINIC REFERRAL TRANSACTIONS ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch clinic referral transactions' });
+  }
+});
+
+// POST: Mark transaction as paid
+app.post('/api/clinic-referral-transactions/:id/pay', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query(`
+      UPDATE clinic_referral_transactions 
+      SET payment_status = 'Paid', updated_at = CURRENT_TIMESTAMP 
+      WHERE id = $1 RETURNING *
+    `, [id]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('PAYMENT ERROR:', err);
+    res.status(500).json({ error: 'Failed to process payment' });
+  }
+});
+
+// POST: Create a new clinic referral transaction
+app.post('/api/clinic-referral-transactions', async (req, res) => {
+  const { patient_id, refer_clinic_id, notes } = req.body;
+  
+  if (!patient_id || !refer_clinic_id) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  try {
+    const query = `
+      INSERT INTO clinic_referral_transactions (patient_id, refer_clinic_id, visit_type, commission_amount, notes)
+      VALUES ($1, $2, NULL, 0.00, $3)
+      RETURNING *;
+    `;
+    const result = await db.query(query, [patient_id, refer_clinic_id, notes]);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('CREATE CLINIC REFERRAL TRANSACTION ERROR:', err);
+    res.status(500).json({ error: 'Failed to create clinic referral transaction' });
+  }
+});
+
+// PUT: Update visit type and calculate commission
+app.put('/api/clinic-referral-transactions/:id/visit-type', async (req, res) => {
+  const { id } = req.params;
+  const { visit_type } = req.body;
+
+  if (!visit_type || !['OPD', 'OT', 'ADMISSION'].includes(visit_type)) {
+    return res.status(400).json({ error: 'Invalid or missing visit type' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Get transaction to find the linked clinic
+    const txRes = await client.query('SELECT refer_clinic_id FROM clinic_referral_transactions WHERE id = $1', [id]);
+    if (txRes.rows.length === 0) throw new Error('Transaction not found');
+    const refer_clinic_id = txRes.rows[0].refer_clinic_id;
+
+    // Fetch the correct commission amount based on the visit type from the refer clinic
+    const clinicRes = await client.query('SELECT opd_commission, ot_commission, admission_commission FROM refer_clinics WHERE id = $1', [refer_clinic_id]);
+    if (clinicRes.rows.length === 0) throw new Error('Refer clinic not found');
+    const clinic = clinicRes.rows[0];
+
+    let commission_amount = 0;
+    if (visit_type === 'OPD') {
+      commission_amount = clinic.opd_commission;
+    } else if (visit_type === 'OT') {
+      commission_amount = clinic.ot_commission;
+    } else if (visit_type === 'ADMISSION') {
+      commission_amount = clinic.admission_commission;
+    }
+
+    const updateRes = await client.query(`
+      UPDATE clinic_referral_transactions
+      SET visit_type = $1, commission_amount = $2, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING *;
+    `, [visit_type, commission_amount, id]);
+
+    await client.query('COMMIT');
+    res.json(updateRes.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('UPDATE VISIT TYPE ERROR:', err);
+    res.status(500).json({ error: 'Failed to update visit type' });
+  } finally {
+    client.release();
+  }
+});
+
 // --- Dashboard Analytics ---
+
+app.get('/api/dashboard/revenue-profit', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const today = new Date();
+    const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const defaultEnd = today.toISOString().split('T')[0];
+    const start = startDate || defaultStart;
+    const end = endDate || defaultEnd;
+
+    const [
+      revenueData,
+      labData,
+      referralCostData,
+      purchaseCostData,
+      trendData,
+      breakdownData
+    ] = await Promise.all([
+      db.query(`
+        SELECT
+          (SELECT COALESCE(SUM(net_amount), 0) FROM vouchers WHERE DATE(created_at) BETWEEN $1 AND $2) as voucher_revenue,
+          (SELECT COALESCE(SUM(commission_amount), 0) FROM clinic_referral_transactions WHERE DATE(created_at) BETWEEN $1 AND $2 AND is_active = true) as external_referral_income
+      `, [start, end]),
+      
+      db.query(`
+        SELECT 
+          COALESCE(SUM(vi.subtotal), 0) as lab_revenue,
+          COALESCE(SUM(
+            CASE 
+              WHEN vi.lab_cost_price > 0 THEN vi.lab_cost_price
+              ELSE vi.subtotal * (COALESCE(vi.lab_commission_pct, 0) / 100)
+            END
+          ), 0) as lab_cost,
+          COALESCE(SUM(
+            CASE 
+              WHEN vi.lab_cost_price > 0 THEN vi.subtotal - vi.lab_cost_price
+              ELSE vi.subtotal - (vi.subtotal * (COALESCE(vi.lab_commission_pct, 0) / 100))
+            END
+          ), 0) as lab_profit
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        WHERE vi.item_type = 'INVESTIGATION' AND DATE(v.created_at) BETWEEN $1 AND $2
+      `, [start, end]),
+
+      db.query(`
+        SELECT COALESCE(SUM(vr.amount), 0) as referral_cost
+        FROM voucher_referrals vr
+        JOIN vouchers v ON vr.voucher_id = v.id
+        WHERE DATE(v.created_at) BETWEEN $1 AND $2
+      `, [start, end]),
+
+      db.query(`
+        SELECT COALESCE(SUM(vi.quantity * COALESCE(si.default_purchase_price, 0)), 0) as purchase_cost
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        LEFT JOIN stock_items si ON vi.item_id = si.id
+        WHERE vi.item_type != 'INVESTIGATION' AND DATE(v.created_at) BETWEEN $1 AND $2
+      `, [start, end]),
+
+      db.query(`
+        WITH dates AS (
+          SELECT generate_series($1::date, $2::date, '1 day'::interval)::date as date
+        )
+        SELECT 
+          d.date, 
+          COALESCE((SELECT SUM(net_amount) FROM vouchers WHERE DATE(created_at) = d.date), 0) + 
+          COALESCE((SELECT SUM(commission_amount) FROM clinic_referral_transactions WHERE DATE(created_at) = d.date AND is_active = true), 0) as total_revenue,
+          
+          COALESCE((SELECT SUM(vr.amount) FROM voucher_referrals vr JOIN vouchers v ON vr.voucher_id = v.id WHERE DATE(v.created_at) = d.date), 0) +
+          COALESCE((SELECT SUM(vi.quantity * COALESCE(si.default_purchase_price, 0)) FROM voucher_items vi JOIN vouchers v ON vi.voucher_id = v.id LEFT JOIN stock_items si ON vi.item_id = si.id WHERE vi.item_type != 'INVESTIGATION' AND DATE(v.created_at) = d.date), 0) +
+          COALESCE((SELECT SUM(
+            CASE WHEN vi.lab_cost_price > 0 THEN vi.lab_cost_price ELSE vi.subtotal * (COALESCE(vi.lab_commission_pct, 0) / 100) END
+          ) FROM voucher_items vi JOIN vouchers v ON vi.voucher_id = v.id WHERE vi.item_type = 'INVESTIGATION' AND DATE(v.created_at) = d.date), 0) as total_cost
+          
+        FROM dates d
+        ORDER BY d.date ASC;
+      `, [start, end]),
+
+      db.query(`
+        SELECT UPPER(vi.item_type) as stream, COALESCE(SUM(vi.subtotal), 0) as value 
+        FROM voucher_items vi 
+        JOIN vouchers v ON vi.voucher_id = v.id 
+        WHERE DATE(v.created_at) BETWEEN $1 AND $2
+        GROUP BY UPPER(vi.item_type)
+        UNION ALL
+        SELECT 'EXTERNAL_REFERRAL' as stream, COALESCE(SUM(commission_amount), 0) as value 
+        FROM clinic_referral_transactions
+        WHERE DATE(created_at) BETWEEN $1 AND $2 AND is_active = true
+      `, [start, end])
+    ]);
+
+    const totalRev = parseFloat(revenueData.rows[0].voucher_revenue) + parseFloat(revenueData.rows[0].external_referral_income);
+    const labProfit = parseFloat(labData.rows[0].lab_profit);
+    const refCost = parseFloat(referralCostData.rows[0].referral_cost);
+    const purCost = parseFloat(purchaseCostData.rows[0].purchase_cost);
+    const labCost = parseFloat(labData.rows[0].lab_cost);
+    
+    // Total cost includes referral payouts, pharmacy COGS, and lab costs.
+    const totalCost = refCost + purCost + labCost; 
+    const netProfit = totalRev - totalCost;
+
+    res.json({
+      metrics: {
+        total_revenue: totalRev,
+        lab_profit: labProfit,
+        referral_cost: refCost,
+        purchase_cost: purCost,
+        lab_cost: labCost,
+        total_cost: totalCost,
+        net_profit: netProfit
+      },
+      charts: {
+        revenue_vs_cost: trendData.rows,
+        lab_profit_analysis: {
+          revenue: parseFloat(labData.rows[0].lab_revenue),
+          cost: labCost,
+          profit: labProfit
+        },
+        revenue_breakdown: breakdownData.rows
+      }
+    });
+  } catch (err) {
+    console.error('REVENUE PROFIT DASHBOARD ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch revenue/profit data' });
+  }
+});
+
+app.get('/api/dashboard/executive', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    
+    // Default to this month if not provided
+    const today = new Date();
+    const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const defaultEnd = today.toISOString().split('T')[0];
+
+    const start = startDate || defaultStart;
+    const end = endDate || defaultEnd;
+
+    const [
+      revenueData,
+      patientsData,
+      vouchersData,
+      labProfitData,
+      pendingLabData,
+      pendingReferralData,
+      supplierBalanceData,
+      revenueTrendData,
+      revenueStreamData
+    ] = await Promise.all([
+      db.query(`
+        SELECT
+          (SELECT COALESCE(SUM(net_amount), 0) FROM vouchers WHERE DATE(created_at) BETWEEN $1 AND $2) as voucher_revenue,
+          (SELECT COALESCE(SUM(commission_amount), 0) FROM clinic_referral_transactions WHERE DATE(created_at) BETWEEN $1 AND $2 AND is_active = true) as external_referral_income
+      `, [start, end]),
+      
+      db.query('SELECT COUNT(DISTINCT patient_id) as total_patients FROM vouchers WHERE DATE(created_at) BETWEEN $1 AND $2', [start, end]),
+      
+      db.query('SELECT COUNT(id) as total_vouchers FROM vouchers WHERE DATE(created_at) BETWEEN $1 AND $2', [start, end]),
+      
+      db.query(`
+        SELECT COALESCE(SUM(
+          CASE 
+            WHEN vi.lab_cost_price > 0 THEN vi.subtotal - vi.lab_cost_price
+            ELSE vi.subtotal - (vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100)
+          END
+        ), 0) as lab_profit 
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        WHERE vi.item_type = 'INVESTIGATION' AND DATE(v.created_at) BETWEEN $1 AND $2
+      `, [start, end]),
+
+      db.query("SELECT COALESCE(SUM(lab_cost_price), 0) as pending_lab_payable FROM voucher_items WHERE lab_payment_status = 'Pending'"),
+      
+      db.query("SELECT COALESCE(SUM(amount), 0) as pending_referral_payable FROM voucher_referrals WHERE payment_status = 'Pending'"),
+      
+      db.query('SELECT COALESCE(SUM(balance_amount), 0) as supplier_balance FROM purchases'),
+      
+      db.query(`
+        WITH dates AS (
+          SELECT generate_series($1::date, $2::date, '1 day'::interval) as date
+        )
+        SELECT 
+          d.date, 
+          COALESCE((SELECT SUM(net_amount) FROM vouchers WHERE DATE(created_at) = d.date), 0) + 
+          COALESCE((SELECT SUM(commission_amount) FROM clinic_referral_transactions WHERE DATE(created_at) = d.date AND is_active = true), 0) as total_revenue
+        FROM dates d
+        ORDER BY d.date ASC;
+      `, [start, end]),
+
+      db.query(`
+        SELECT vi.item_type as stream, COALESCE(SUM(vi.subtotal), 0) as value 
+        FROM voucher_items vi 
+        JOIN vouchers v ON vi.voucher_id = v.id 
+        WHERE DATE(v.created_at) BETWEEN $1 AND $2
+        GROUP BY vi.item_type
+        UNION ALL
+        SELECT 'EXTERNAL_REFERRAL' as stream, COALESCE(SUM(commission_amount), 0) as value 
+        FROM clinic_referral_transactions
+        WHERE DATE(created_at) BETWEEN $1 AND $2 AND is_active = true
+      `, [start, end])
+    ]);
+
+    const voucherRev = parseFloat(revenueData.rows[0].voucher_revenue);
+    const extRefRev = parseFloat(revenueData.rows[0].external_referral_income);
+    const totalRev = voucherRev + extRefRev;
+    const totalPts = parseInt(patientsData.rows[0].total_patients);
+
+    res.json({
+      metrics: {
+        total_revenue: totalRev,
+        voucher_revenue: voucherRev,
+        external_referral_income: extRefRev,
+        total_patients: totalPts,
+        total_vouchers: parseInt(vouchersData.rows[0].total_vouchers),
+        avg_revenue_per_patient: totalPts > 0 ? (totalRev / totalPts) : 0,
+        lab_profit: parseFloat(labProfitData.rows[0].lab_profit),
+        pending_lab_payable: parseFloat(pendingLabData.rows[0].pending_lab_payable),
+        pending_referral_payable: parseFloat(pendingReferralData.rows[0].pending_referral_payable),
+        supplier_balance: parseFloat(supplierBalanceData.rows[0].supplier_balance)
+      },
+      charts: {
+        revenue_trend: revenueTrendData.rows,
+        revenue_stream_split: revenueStreamData.rows
+      }
+    });
+  } catch (err) {
+    console.error('EXECUTIVE DASHBOARD ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch executive dashboard data' });
+  }
+});
 
 app.get('/api/dashboard/summary', async (req, res) => {
   try {
@@ -2179,6 +2583,77 @@ app.post('/api/purchases', async (req, res) => {
     res.status(500).json({ error: 'Failed to create purchase invoice', details: err.message });
   } finally {
     client.release();
+  }
+});
+
+// --- New Dedicated Financial Reporting APIs ---
+
+// GET: Detailed Revenue for Accounting & Cashiers
+app.get('/api/reports/detailed-revenue', async (req, res) => {
+  const { start_date, end_date } = req.query;
+  const start = start_date || new Date().toISOString().split('T')[0];
+  const end = (end_date || start) + ' 23:59:59';
+
+  const lastMonthStart = new Date(new Date(start).setMonth(new Date(start).getMonth() - 1)).toISOString().split('T')[0];
+  const lastMonthEnd = new Date(new Date(end).setMonth(new Date(end).getMonth() - 1)).toISOString().split('T')[0] + ' 23:59:59';
+
+  try {
+    const [
+      dailyCollection,
+      categoryStats,
+      monthlyComparison
+    ] = await Promise.all([
+      // 1. Daily Collection Summary (Date, Gross, Discount, Net, Cash, Digital)
+      db.query(`
+        SELECT 
+          DATE(created_at) as date,
+          SUM(total_amount) as gross_sales,
+          SUM(discount_amount) as total_discount,
+          SUM(net_amount) as net_collection,
+          SUM(CASE WHEN payment_method = 'Cash' THEN net_amount ELSE 0 END) as cash_amount,
+          SUM(CASE WHEN payment_method != 'Cash' THEN net_amount ELSE 0 END) as digital_amount
+        FROM vouchers
+        WHERE created_at >= $1 AND created_at <= $2
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC`, [start, end]),
+      
+      // 2. Revenue by Category (Pharmacy, Service, Laboratory, Package)
+      db.query(`
+        SELECT 
+          CASE 
+            WHEN vi.item_type = 'PHARMACY' THEN 'Pharmacy'
+            WHEN vi.item_type = 'PACKAGE' THEN 'Package'
+            WHEN ic.name ILIKE '%Laboratory%' THEN 'Laboratory'
+            ELSE 'Service'
+          END as category_group,
+          SUM(vi.subtotal) as amount
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        LEFT JOIN stock_items si ON vi.item_id = si.id
+        LEFT JOIN item_subcategories isc ON si.subcategory_id = isc.id
+        LEFT JOIN item_categories ic ON isc.category_id = ic.id
+        WHERE v.created_at >= $1 AND v.created_at <= $2
+        GROUP BY category_group`, [start, end]),
+
+      // 3. Monthly Growth Comparison
+      db.query(`
+        SELECT 
+          (SELECT SUM(net_amount) FROM vouchers WHERE created_at >= $1 AND created_at <= $2) as current_period,
+          (SELECT SUM(net_amount) FROM vouchers WHERE created_at >= $3 AND created_at <= $4) as previous_period
+      `, [start, end, lastMonthStart, lastMonthEnd])
+    ]);
+
+    res.json({
+      dailyCollection: dailyCollection.rows,
+      categoryStats: categoryStats.rows,
+      growth: {
+        current: parseFloat(monthlyComparison.rows[0].current_period) || 0,
+        previous: parseFloat(monthlyComparison.rows[0].previous_period) || 0
+      }
+    });
+  } catch (err) {
+    console.error('DETAILED REVENUE API ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch financial data' });
   }
 });
 

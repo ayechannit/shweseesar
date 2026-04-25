@@ -14,6 +14,9 @@ import LabTestPricing from './pages/Laboratory/LabTestPricing';
 import PurchaseManagement from './pages/Purchase/PurchaseManagement';
 import LaboratoryManagement from './pages/Laboratory/LaboratoryManagement';
 import ReportsPage from './pages/Reports/ReportsPage';
+import DetailedRevenueReport from './pages/Reports/DetailedRevenueReport';
+
+import ClinicReferralTransaction from './pages/Referral/ClinicReferralTransaction';
 
 function App() {
   console.log('App rendering, current location:', window.location.pathname);
@@ -30,10 +33,12 @@ function App() {
           <Route path="/gp-packages" element={<GPPackageManagement />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/referral-payments" element={<ReferralPaymentManagement />} />
+          <Route path="/clinic-referral-transactions" element={<ClinicReferralTransaction />} />
           <Route path="/lab-payments" element={<LabPaymentManagement />} />
           <Route path="/lab-pricing" element={<LabTestPricing />} />
           <Route path="/laboratory-investigations" element={<LaboratoryManagement />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/revenue-dashboard" element={<DetailedRevenueReport />} />
           <Route path="/patients" element={<MasterDataPage type="patients" />} />
           <Route path="/physicians" element={<MasterDataPage type="physicians" />} />
           <Route path="/medical_officers" element={<MasterDataPage type="medical_officers" />} />
@@ -43,6 +48,7 @@ function App() {
           <Route path="/item_categories" element={<MasterDataPage type="item_categories" />} />
           <Route path="/item_subcategories" element={<MasterDataPage type="item_subcategories" />} />
           <Route path="/laboratories" element={<MasterDataPage type="laboratories" />} />
+          <Route path="/refer_clinics" element={<MasterDataPage type="refer_clinics" />} />
           <Route path="*" element={<Navigate to="/reception" replace />} />
         </Route>
       </Routes>

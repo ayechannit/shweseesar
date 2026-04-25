@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  TrendingUp, Users, Calendar, AlertTriangle, 
-  DollarSign, Package, ShoppingBag, ArrowUpRight, 
-  ArrowDownRight, Clock, ChevronRight, Receipt, Activity,
-  Layout, ClipboardList, PackageCheck, Star
+  TrendingUp, Users, DollarSign, Activity, Calendar, PieChart, BarChart3, 
+  AlertCircle, ShoppingCart, CreditCard, ArrowUpRight, Receipt, 
+  ChevronRight, ArrowRight, Target, Zap, ShieldCheck
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:5000/api';
@@ -11,468 +10,487 @@ const API_BASE = 'http://localhost:5000/api';
 export default function ExecutiveDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+  const currentDay = today.toISOString().split('T')[0];
+  
+  const [startDate, setStartDate] = useState(firstDay);
+  const [endDate, setEndDate] = useState(currentDay);
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [startDate, endDate]);
 
   const fetchDashboardData = async () => {
+    setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/dashboard/summary`);
+      const res = await fetch(`${API_BASE}/dashboard/executive?startDate=${startDate}&endDate=${endDate}`);
       const result = await res.json();
       setData(result);
     } catch (err) {
-      console.error('Failed to fetch dashboard data:', err);
+      console.error('Failed to fetch executive dashboard data:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
+  if (loading && !data) {
     return (
-      <div className="loading-state-modern">
-        <div className="pulse-loader"></div>
-        <p>Analyzing clinic metrics...</p>
+      <div className="modern-loading-container">
+        <div className="modern-spinner"></div>
+        <p className="modern-loading-text">SYNCING DATA...</p>
+        <style dangerouslySetInnerHTML={{ __html: `
+          .modern-loading-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #f8fafc; }
+          .modern-spinner { width: 48px; height: 48px; border: 4px solid #e2e8f0; border-top: 4px solid #4f46e5; border-radius: 50%; animation: spin 1s linear infinite; }
+          .modern-loading-text { margin-top: 24px; font-weight: 800; color: #64748b; letter-spacing: 0.1em; }
+          @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        `}} />
       </div>
     );
   }
-  
-  const { 
-    metrics = {}, 
-    revenueTrend = [], 
-    topItems = [], 
-    recentVouchers = [], 
-    patientTrend = [] 
-  } = data || {};
 
-  const revenueToday = metrics.revenueToday || 0;
-  const revenueMonth = metrics.revenueMonth || 0;
-  const patientsToday = metrics.patientsToday || 0;
-  const appts = metrics.appointmentsToday || { scheduled: 0, completed: 0 };
-  const lowStockCount = metrics.lowStockCount || 0;
-  const expiringStockCount = metrics.expiringStockCount || 0;
-  const pendingReferrals = metrics.pendingReferrals || 0;
+  const { metrics = {}, charts = {} } = data || {};
+  const { revenue_trend = [], revenue_stream_split = [] } = charts;
+
+  const streamColors = {
+    'PHARMACY': '#6366f1',
+    'INVESTIGATION': '#10b981',
+    'SERVICE': '#8b5cf6',
+    'PACKAGE': '#f59e0b',
+    'EXTERNAL_REFERRAL': '#f43f5e',
+    'OTHER': '#64748b'
+  };
+
+  const streamLabels = {
+    'PHARMACY': 'Pharmacy',
+    'INVESTIGATION': 'Laboratory',
+    'SERVICE': 'Services',
+    'PACKAGE': 'Packages',
+    'EXTERNAL_REFERRAL': 'Referrals'
+  };
+
+  let totalStreamValue = 0;
+  const processedStreams = (revenue_stream_split || []).map(item => {
+    const val = parseFloat(item.value);
+    totalStreamValue += val;
+    return { ...item, stream: (item.stream || 'OTHER').toUpperCase(), value: val };
+  }).filter(item => item.value > 0);
+
+  let conicString = '';
+  let cumulativePercent = 0;
+  if (totalStreamValue > 0) {
+    conicString = processedStreams.map(item => {
+      const percent = (item.value / totalStreamValue) * 100;
+      const color = streamColors[item.stream] || streamColors['OTHER'];
+      const segment = `${color} ${cumulativePercent}% ${cumulativePercent + percent}%`;
+      cumulativePercent += percent;
+      return segment;
+    }).join(', ');
+  } else {
+    conicString = '#e2e8f0 0% 100%';
+  }
 
   return (
-    <div className="dashboard-wrapper">
-      {/* Header Section */}
-      <div className="dashboard-header-premium">
-        <div className="header-text">
-          <h1>Clinic Overview</h1>
-          <p>Real-time insights for <strong>Shwe See Sar</strong> clinical operations.</p>
+    <div className="modern-dashboard">
+      <div className="modern-header-row">
+        <div className="modern-header-content">
+          <div className="modern-badge-indigo">SYSTEM COMMAND</div>
+          <h1 className="modern-main-title">Executive Intelligence</h1>
+          <p className="modern-subtitle">Consolidated operational metrics and financial KPIs</p>
         </div>
-        <div className="header-stats-pill">
-           <div className="pill-item">
-             <span className="dot online"></span>
-             <span>System Live</span>
-           </div>
-           <div className="pill-divider"></div>
-           <div className="pill-item">
-             <Calendar size={14} />
-             <span>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-           </div>
+
+        <div className="modern-date-controls">
+          <div className="modern-input-group">
+            <Calendar size={16} />
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </div>
+          <div className="modern-divider-small"></div>
+          <div className="modern-input-group">
+            <Calendar size={16} />
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          </div>
+          <button onClick={fetchDashboardData} className="modern-refresh-btn">
+            <Zap size={18} fill="currentColor" />
+          </button>
         </div>
       </div>
 
-      {/* Hero Metrics Row */}
-      <div className="metrics-grid-premium">
-        <MetricCardPremium 
-          title="Daily Revenue" 
-          value={`${revenueToday.toLocaleString()}`} 
-          unit="MMK"
-          trend="+12.5%"
-          isPositive={true}
-          icon={<DollarSign size={22} />}
-          color="#3b82f6"
-        />
-        <MetricCardPremium 
-          title="Monthly Total" 
-          value={`${revenueMonth.toLocaleString()}`} 
-          unit="MMK"
-          trend="+8.2%"
-          isPositive={true}
-          icon={<TrendingUp size={22} />}
-          color="#8b5cf6"
-        />
-        <MetricCardPremium 
-          title="Patients Today" 
-          value={patientsToday} 
-          unit="Visits"
-          trend="-2%"
-          isPositive={false}
-          icon={<Users size={22} />}
-          color="#10b981"
-        />
-        <MetricCardPremium 
-          title="Daily Schedule" 
-          value={appts.scheduled} 
-          unit="Appts"
-          trend="Stable"
-          isPositive={true}
-          icon={<ClipboardList size={22} />}
-          color="#f59e0b"
-        />
+      <div className="modern-metrics-grid">
+        <MetricCard title="Total Revenue" value={metrics.total_revenue} icon={<TrendingUp />} color="indigo" currency="MMK" highlight />
+        <MetricCard title="Patient Intake" value={metrics.total_patients} icon={<Users />} color="emerald" unit="Visits" />
+        <MetricCard title="Referral Income" value={metrics.external_referral_income} icon={<ArrowUpRight />} color="rose" currency="MMK" />
+        <MetricCard title="Laboratory Yield" value={metrics.lab_profit} icon={<PieChart />} color="violet" currency="MMK" />
       </div>
 
-      {/* Main Charts Row */}
-      <div className="charts-container-premium">
-        <div className="card-premium chart-main">
-          <div className="card-header-premium">
-            <div className="title-group">
-              <h3 className="card-title">Revenue Growth</h3>
-              <p className="card-subtitle">Last 7 days performance</p>
+      <div className="modern-charts-row">
+        <div className="modern-card chart-main">
+          <div className="modern-card-header">
+            <div>
+              <h3 className="modern-card-title">Revenue Velocity</h3>
+              <p className="modern-card-subtitle">Daily financial inflow analysis</p>
             </div>
-            <div className="chart-legend">
-              <span className="legend-item"><span className="legend-dot blue"></span> Sales</span>
+            <div className="modern-chart-legend">
+              <span className="dot indigo"></span> <span className="legend-text">Revenue</span>
             </div>
           </div>
-          <div className="chart-canvas-modern">
-            {revenueTrend.map((day, idx) => {
-              const maxAmount = Math.max(...revenueTrend.map(d => parseFloat(d.amount)), 1);
-              const height = (parseFloat(day.amount) / maxAmount) * 100;
+          
+          <div className="modern-chart-container">
+            {revenue_trend.length === 0 ? (
+              <div className="modern-empty-state">No transaction data for this period</div>
+            ) : revenue_trend.map((day, idx) => {
+              const maxAmount = Math.max(...revenue_trend.map(d => parseFloat(d.total_revenue)), 1);
+              const height = (parseFloat(day.total_revenue) / maxAmount) * 100;
               return (
-                <div key={idx} className="chart-bar-group">
-                  <div className="bar-track">
-                    <div className="bar-fill blue" style={{ height: `${height}%` }}>
-                       <div className="bar-tooltip">{parseFloat(day.amount).toLocaleString()}</div>
+                <div key={idx} className="modern-bar-group">
+                  <div className="modern-bar-track">
+                    <div className="modern-bar-fill" style={{ height: `${height}%` }}>
+                       <div className="modern-bar-tooltip">{parseFloat(day.total_revenue).toLocaleString()}</div>
                     </div>
                   </div>
-                  <span className="bar-axis-label">{new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                  <span className="modern-bar-label">
+                    {new Date(day.date).getDate()}/{new Date(day.date).getMonth()+1}
+                  </span>
                 </div>
               );
             })}
           </div>
         </div>
 
-        <div className="card-premium chart-secondary">
-          <div className="card-header-premium">
-             <div className="title-group">
-               <h3 className="card-title">Patient Flow</h3>
-               <p className="card-subtitle">Daily distinct visitors</p>
+        <div className="modern-card chart-side">
+          <div className="modern-card-header">
+            <h3 className="modern-card-title">Revenue Sources</h3>
+            <p className="modern-card-subtitle">Distribution by category</p>
+          </div>
+
+          <div className="modern-pie-container">
+            <div className="modern-pie-chart" style={{ background: `conic-gradient(${conicString})` }}>
+              <div className="modern-pie-center">
+                <span className="pie-label">TOTAL</span>
+                <span className="pie-value">{(totalStreamValue/1000000).toFixed(1)}M</span>
+              </div>
+            </div>
+            
+            <div className="modern-pie-legend">
+              {processedStreams.map((item, idx) => (
+                <div key={idx} className="modern-legend-item">
+                  <div className="legend-info">
+                    <div className="legend-color" style={{ backgroundColor: streamColors[item.stream] || streamColors['OTHER'] }}></div>
+                    <span className="legend-name">{streamLabels[item.stream] || item.stream}</span>
+                  </div>
+                  <div className="legend-values">
+                    <span className="legend-amount">{item.value.toLocaleString()}</span>
+                    <span className="legend-pct">{((item.value / totalStreamValue) * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="modern-bottom-grid">
+        <OperationalSection title="Operational Efficiency" icon={<Zap color="#f59e0b" />}>
+           <StatLine label="Avg Revenue / Patient" value={metrics.avg_revenue_per_patient} currency="MMK" color="indigo" />
+           <StatLine label="Total Vouchers Issued" value={metrics.total_vouchers} unit="Units" color="emerald" />
+           <StatLine label="Direct Pharmacy Sales" value={metrics.voucher_revenue} currency="MMK" color="sky" />
+        </OperationalSection>
+
+        <OperationalSection title="Risk Exposure" icon={<ShieldCheck color="#10b981" />}>
+           <StatLine label="Unpaid Lab Invoices" value={metrics.pending_lab_payable} currency="MMK" isNegative color="rose" />
+           <StatLine label="Pending Agent Fees" value={metrics.pending_referral_payable} currency="MMK" isNegative color="orange" />
+           <StatLine label="Trade Supplier Balances" value={metrics.supplier_balance} currency="MMK" isNegative color="red" />
+        </OperationalSection>
+
+        {/* <div className="modern-ai-card">
+          <div className="ai-header">
+             <div className="ai-icon-pulse"></div>
+             <h3>AI Insights</h3>
+          </div>
+          <div className="ai-content">
+             <div className="ai-bubble">
+               <span className="ai-tag">ANALYSIS</span>
+               <p>{metrics.total_patients > 0 ? "Clinic profitability is currently stable. High correlation detected between laboratory yields and overall monthly growth. Recommend optimizing pharmacy inventory for top 10 products." : "Insufficient data for detailed AI projections. Start recording vouchers to activate predictive modeling."}</p>
+             </div>
+             <div className="ai-footer">
+               <span>Performance Report Alpha</span>
+               <ArrowRight size={16} />
              </div>
           </div>
-          <div className="chart-canvas-modern">
-            {patientTrend.map((day, idx) => {
-              const maxCount = Math.max(...patientTrend.map(d => parseInt(d.count)), 1);
-              const height = (parseInt(day.count) / maxCount) * 100;
-              return (
-                <div key={idx} className="chart-bar-group">
-                  <div className="bar-track">
-                    <div className="bar-fill green" style={{ height: `${height}%` }}>
-                       <div className="bar-tooltip">{day.count} Patients</div>
-                    </div>
-                  </div>
-                  <span className="bar-axis-label">{new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' })}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Operational & Activity Row */}
-      <div className="operations-grid-premium">
-        {/* Urgent Alerts */}
-        <div className="card-premium">
-          <div className="card-header-premium">
-            <h3 className="card-title">Operational Health</h3>
-            <Activity size={18} color="#94a3b8" />
-          </div>
-          <div className="alerts-list-premium">
-             <OperationItem 
-               title="Low Stock Warning" 
-               count={lowStockCount} 
-               status="Critical"
-               icon={<AlertTriangle size={18} />} 
-               color="#ef4444"
-               link="/stock"
-             />
-             <OperationItem 
-               title="Upcoming Expiry" 
-               count={expiringStockCount} 
-               status="Attention"
-               icon={<Clock size={18} />} 
-               color="#f59e0b"
-               link="/stock"
-             />
-             <OperationItem 
-               title="Referral Balances" 
-               count={`${Math.round(pendingReferrals/1000)}k`} 
-               status="Pending"
-               icon={<ShoppingBag size={18} />} 
-               color="#3b82f6"
-               link="/referral-payments"
-             />
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="card-premium">
-          <div className="card-header-premium">
-            <h3 className="card-title">Recent Transactions</h3>
-            <Receipt size={18} color="#94a3b8" />
-          </div>
-          <div className="activity-table-container">
-            <table className="table-premium">
-              <thead>
-                <tr><th>Voucher</th><th>Patient</th><th className="text-right">Net</th></tr>
-              </thead>
-              <tbody>
-                {recentVouchers.map((v, idx) => (
-                  <tr key={idx}>
-                    <td className="font-bold text-blue">{v.voucher_number}</td>
-                    <td>{v.patient_name}</td>
-                    <td className="text-right font-black">{parseFloat(v.net_amount).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Top Performers */}
-        <div className="card-premium">
-          <div className="card-header-premium">
-            <h3 className="card-title">Best Sellers (April)</h3>
-            <Star size={18} color="#f59e0b" />
-          </div>
-          <div className="top-performers-list">
-             {topItems.slice(0, 4).map((item, idx) => (
-               <div key={idx} className="performer-item">
-                 <div className="performer-rank">{idx + 1}</div>
-                 <div className="performer-info">
-                   <span className="performer-name">{item.name}</span>
-                   <span className="performer-meta">{item.total_qty} units sold</span>
-                 </div>
-                 <div className="performer-value">
-                   {Math.round(item.total_revenue/1000)}k
-                 </div>
-               </div>
-             ))}
-          </div>
-        </div>
+        </div> */}
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
-        .dashboard-wrapper { animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* --- GLOBAL OVERRIDES --- */
+        .modern-dashboard * { box-sizing: border-box; }
+        
+        .modern-dashboard {
+          padding: 2.5rem;
+          background: #f8fafc;
+          min-height: 100vh;
+          font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+          color: #1e293b;
+          line-height: 1.5;
+        }
 
-        /* Premium Header */
-        .dashboard-header-premium {
+        /* --- HEADER --- */
+        .modern-header-row {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 2.5rem;
+          margin-bottom: 3rem;
           flex-wrap: wrap;
           gap: 1.5rem;
         }
-        .header-text h1 { font-size: 2.25rem; fontWeight: 900; color: #0f172a; margin: 0; letter-spacing: -0.04em; }
-        .header-text p { color: #64748b; margin: 0.25rem 0 0; font-size: 1rem; }
-        .header-stats-pill {
-          display: flex;
-          align-items: center;
-          background: white;
-          padding: 0.5rem 1.25rem;
-          border-radius: 100px;
-          border: 1px solid #e2e8f0;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-          gap: 1rem;
-        }
-        .pill-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 700; color: #475569; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; }
-        .dot.online { background: #10b981; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1); }
-        .pill-divider { width: 1px; height: 16px; background: #e2e8f0; }
 
-        /* Metrics Cards */
-        .metrics-grid-premium {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-          gap: 1.5rem;
-          margin-bottom: 2.5rem;
+        .modern-badge-indigo {
+          display: inline-block;
+          padding: 0.35rem 0.85rem;
+          background: #eef2ff;
+          color: #4f46e5;
+          font-size: 0.7rem;
+          font-weight: 800;
+          border-radius: 99px;
+          letter-spacing: 0.12em;
+          margin-bottom: 0.75rem;
+          box-shadow: 0 0 0 1px #e0e7ff;
         }
-        .metric-card-premium {
-          background: white;
-          border-radius: 24px;
-          padding: 1.75rem;
-          display: flex;
-          flex-direction: column;
-          border: 1px solid #f1f5f9;
-          box-shadow: 0 10px 15px -3px rgba(0,0,0,0.03);
-          position: relative;
-          transition: transform 0.2s;
-        }
-        .metric-card-premium:hover { transform: translateY(-4px); }
-        .m-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem; }
-        .m-icon-box { padding: 0.75rem; border-radius: 16px; }
-        .m-trend { font-size: 0.75rem; font-weight: 800; padding: 4px 8px; border-radius: 6px; }
-        .m-trend.up { background: #ecfdf5; color: #059669; }
-        .m-trend.down { background: #fef2f2; color: #dc2626; }
-        .m-title { font-size: 0.875rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-        .m-value-row { display: flex; align-items: baseline; gap: 0.5rem; margin-top: 0.25rem; }
-        .m-value { font-size: 2.25rem; font-weight: 900; color: #0f172a; letter-spacing: -0.03em; }
-        .m-unit { font-size: 0.9rem; font-weight: 600; color: #94a3b8; }
-        .m-subtitle { font-size: 0.8rem; color: #94a3b8; margin-top: 0.5rem; font-weight: 500; }
 
-        /* Charts */
-        .charts-container-premium {
-          display: grid;
-          grid-template-columns: 1.8fr 1fr;
-          gap: 1.5rem;
-          margin-bottom: 2.5rem;
-        }
-        .card-premium {
+        .modern-main-title { font-size: 2.5rem; font-weight: 900; letter-spacing: -0.03em; margin: 0; color: #0f172a; }
+        .modern-subtitle { color: #64748b; font-weight: 500; font-size: 1rem; margin-top: 0.25rem; }
+
+        .modern-date-controls {
+          display: flex;
+          align-items: center;
           background: white;
-          border-radius: 28px;
+          padding: 0.6rem;
+          border-radius: 1.25rem;
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
           border: 1px solid #f1f5f9;
-          box-shadow: 0 20px 25px -5px rgba(0,0,0,0.03);
-          overflow: hidden;
         }
-        .card-header-premium {
-          padding: 1.75rem 2rem;
-          border-bottom: 1px solid #f8fafc;
+
+        .modern-input-group {
           display: flex;
-          justify-content: space-between;
           align-items: center;
+          gap: 0.6rem;
+          padding: 0.5rem 1rem;
+          color: #94a3b8;
         }
-        .card-title { font-size: 1.125rem; font-weight: 800; color: #1e293b; margin: 0; }
-        .card-subtitle { font-size: 0.875rem; color: #94a3b8; margin: 0.25rem 0 0; font-weight: 500; }
-        
-        .chart-canvas-modern {
-          height: 280px;
-          padding: 2.5rem 2rem 1.5rem;
-          display: flex;
-          align-items: flex-end;
-          gap: 1.5rem;
-        }
-        .chart-bar-group {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 1rem;
-          height: 100%;
-        }
-        .bar-track {
-          flex: 1;
-          width: 100%;
-          background: #f8fafc;
-          border-radius: 12px;
-          display: flex;
-          align-items: flex-end;
-          position: relative;
-        }
-        .bar-fill {
-          width: 100%;
-          border-radius: 10px 10px 6px 6px;
-          transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
-          position: relative;
+
+        .modern-input-group input {
+          border: none;
+          background: transparent;
+          font-family: inherit;
+          font-weight: 800;
+          color: #1e293b;
+          outline: none;
+          font-size: 0.9rem;
           cursor: pointer;
         }
-        .bar-fill.blue { background: linear-gradient(to top, #2563eb, #60a5fa); }
-        .bar-fill.green { background: linear-gradient(to top, #059669, #34d399); }
-        .bar-fill:hover { filter: brightness(1.1); transform: scaleX(1.05); }
-        
-        .bar-tooltip {
-          position: absolute;
-          top: -35px;
-          left: 50%;
-          transform: translateX(-50%);
-          background: #0f172a;
-          color: white;
-          padding: 4px 10px;
-          border-radius: 8px;
-          font-size: 0.75rem;
-          font-weight: 700;
-          opacity: 0;
-          transition: all 0.2s;
-          pointer-events: none;
-          white-space: nowrap;
-          z-index: 10;
-        }
-        .bar-fill:hover .bar-tooltip { opacity: 1; top: -42px; }
-        .bar-axis-label { font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; }
 
-        /* Operations & Activity */
-        .operations-grid-premium {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-          gap: 1.5rem;
-        }
-        .alerts-list-premium { display: flex; flex-direction: column; gap: 0.75rem; padding: 1.5rem; }
-        .op-item-modern {
+        .modern-divider-small { width: 1px; height: 24px; background: #e2e8f0; }
+
+        .modern-refresh-btn {
+          background: #4f46e5;
+          color: white;
+          border: none;
+          padding: 0.75rem;
+          border-radius: 1rem;
           display: flex;
           align-items: center;
-          gap: 1rem;
-          padding: 1.25rem;
-          background: #f8fafc;
-          border-radius: 20px;
-          text-decoration: none;
-          transition: all 0.2s;
-          border: 1px solid transparent;
+          justify-content: center;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          margin-left: 0.5rem;
+          cursor: pointer;
         }
-        .op-item-modern:hover { background: white; border-color: #e2e8f0; transform: translateX(6px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
-        .op-icon-box { padding: 0.75rem; border-radius: 14px; }
-        .op-title { font-size: 0.95rem; font-weight: 700; color: #1e293b; margin: 0; }
-        .op-status { font-size: 0.75rem; font-weight: 600; color: #94a3b8; }
-        .op-value { font-size: 1.25rem; font-weight: 900; margin-left: auto; }
+        .modern-refresh-btn:hover { background: #3730a3; transform: translateY(-2px) scale(1.05); box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3); }
 
-        .activity-table-container { padding: 0.5rem 0; }
-        .table-premium { width: 100%; border-collapse: collapse; }
-        .table-premium th { text-align: left; padding: 1rem 1.5rem; background: #fcfcfd; font-size: 0.75rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; }
-        .table-premium td { padding: 1.125rem 1.5rem; border-bottom: 1px solid #f8fafc; font-size: 0.95rem; color: #475569; }
-        .font-black { font-weight: 900; color: #0f172a; }
-        
-        .top-performers-list { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
-        .performer-item { display: flex; align-items: center; gap: 1rem; }
-        .performer-rank { width: 28px; height: 28px; background: #f1f5f9; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 800; color: #64748b; }
-        .performer-info { flex: 1; display: flex; flex-direction: column; }
-        .performer-name { font-size: 0.95rem; font-weight: 700; color: #1e293b; }
-        .performer-meta { font-size: 0.75rem; color: #94a3b8; }
-        .performer-value { font-weight: 800; color: #10b981; font-size: 0.95rem; }
+        /* --- METRICS --- */
+        .modern-metrics-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 1.75rem;
+          margin-bottom: 3rem;
+        }
 
-        .loading-state-modern { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 70vh; color: #94a3b8; }
-        .pulse-loader { width: 56px; height: 56px; background: #3b82f6; border-radius: 50%; animation: pulse 1.5s infinite ease-in-out; margin-bottom: 2rem; box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.1); }
-        
+        .metric-card {
+          background: white;
+          padding: 2rem;
+          border-radius: 2rem;
+          border: 1px solid #f1f5f9;
+          box-shadow: 0 10px 20px -5px rgba(0,0,0,0.03);
+          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          height: 180px;
+          position: relative;
+          overflow: hidden;
+        }
+        .metric-card:hover { transform: translateY(-8px); box-shadow: 0 25px 30px -10px rgba(0,0,0,0.08); border-color: #e2e8f0; }
+        .metric-card.highlight { border: 2px solid #e0e7ff; background: linear-gradient(135deg, #ffffff, #f9faff); }
+
+        .metric-icon-box {
+          width: 52px;
+          height: 52px;
+          border-radius: 1rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 1.5rem;
+          transition: 0.3s;
+        }
+        .metric-card:hover .metric-icon-box { transform: scale(1.1) rotate(-5deg); }
+
+        .metric-icon-box.indigo { background: #eef2ff; color: #4f46e5; border: 1px solid #e0e7ff; }
+        .metric-icon-box.emerald { background: #ecfdf5; color: #10b981; border: 1px solid #d1fae5; }
+        .metric-icon-box.rose { background: #fff1f2; color: #f43f5e; border: 1px solid #ffe4e6; }
+        .metric-icon-box.violet { background: #f5f3ff; color: #8b5cf6; border: 1px solid #ede9fe; }
+
+        .metric-title { font-size: 0.8rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.5rem; }
+        .metric-value-row { display: flex; align-items: baseline; gap: 0.4rem; }
+        .metric-value { font-size: 2rem; font-weight: 900; color: #0f172a; letter-spacing: -0.03em; }
+        .metric-unit { font-size: 0.9rem; font-weight: 700; color: #cbd5e1; }
+
+        /* --- CHARTS --- */
+        .modern-charts-row {
+          display: grid;
+          grid-template-columns: 2fr 1fr;
+          gap: 2rem;
+          margin-bottom: 3rem;
+        }
+
+        .modern-card { background: white; border-radius: 2.5rem; border: 1px solid #f1f5f9; box-shadow: 0 10px 20px -5px rgba(0,0,0,0.03); padding: 2.5rem; position: relative; }
+        .modern-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2.5rem; }
+        .modern-card-title { font-size: 1.5rem; font-weight: 900; color: #0f172a; letter-spacing: -0.02em; }
+        .modern-card-subtitle { font-size: 0.95rem; color: #94a3b8; font-weight: 600; margin-top: 0.25rem; }
+
+        .modern-chart-container { height: 300px; display: flex; align-items: flex-end; gap: 1.25rem; padding-top: 2rem; border-bottom: 2px solid #f8fafc; }
+        .modern-bar-group { flex: 1; height: 100%; display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+        .modern-bar-track { flex: 1; width: 100%; background: #f8fafc; border-radius: 1rem; display: flex; align-items: flex-end; position: relative; }
+        .modern-bar-fill {
+          width: 100%; background: linear-gradient(to top, #4f46e5, #818cf8); border-radius: 0.75rem 0.75rem 0.4rem 0.4rem;
+          transition: all 1.2s cubic-bezier(0.34, 1.56, 0.64, 1); cursor: pointer; position: relative;
+        }
+        .modern-bar-fill:hover { filter: brightness(1.15); transform: scaleX(1.1); z-index: 5; }
+        .modern-bar-tooltip {
+          position: absolute; top: -45px; left: 50%; transform: translateX(-50%) translateY(10px); background: #0f172a; color: white; padding: 6px 12px; border-radius: 10px;
+          font-size: 0.8rem; font-weight: 800; opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 20; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3);
+        }
+        .modern-bar-fill:hover .modern-bar-tooltip { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .modern-bar-label { font-size: 0.75rem; font-weight: 800; color: #94a3b8; padding-bottom: 0.5rem; }
+
+        .modern-pie-container { display: flex; flex-direction: column; align-items: center; gap: 3rem; }
+        .modern-pie-chart {
+          width: 220px; height: 220px; border-radius: 50%; position: relative;
+          display: flex; align-items: center; justify-content: center; transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+          box-shadow: 0 15px 30px -10px rgba(0,0,0,0.1);
+        }
+        .modern-pie-chart:hover { transform: rotate(8deg) scale(1.08); }
+        .modern-pie-center { width: 130px; height: 130px; background: white; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: inset 0 4px 8px rgba(0,0,0,0.06); }
+        .pie-label { font-size: 0.75rem; font-weight: 800; color: #cbd5e1; letter-spacing: 0.2em; margin-bottom: 0.25rem; }
+        .pie-value { font-size: 1.5rem; font-weight: 900; color: #0f172a; letter-spacing: -0.02em; }
+
+        .modern-pie-legend { width: 100%; display: flex; flex-direction: column; gap: 0.75rem; }
+        .modern-legend-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; border-radius: 1rem; transition: all 0.2s; border: 1px solid transparent; }
+        .modern-legend-item:hover { background: #f8fafc; border-color: #f1f5f9; transform: translateX(5px); }
+        .legend-info { display: flex; align-items: center; gap: 1rem; }
+        .legend-color { width: 12px; height: 12px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .legend-name { font-size: 0.95rem; font-weight: 700; color: #475569; }
+        .legend-values { display: flex; align-items: center; gap: 1rem; }
+        .legend-amount { font-size: 1rem; font-weight: 900; color: #0f172a; }
+        .legend-pct { font-size: 0.75rem; font-weight: 800; color: #4f46e5; background: #eef2ff; padding: 3px 8px; border-radius: 6px; }
+
+        /* --- OPERATIONAL --- */
+        .modern-bottom-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 2rem; margin-bottom: 2rem; }
+        .modern-op-card { background: white; padding: 2.5rem; border-radius: 2.5rem; border: 1px solid #f1f5f9; box-shadow: 0 10px 20px -5px rgba(0,0,0,0.03); }
+        .op-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; font-weight: 900; font-size: 1.25rem; color: #0f172a; }
+        .op-lines { display: flex; flex-direction: column; gap: 1rem; }
+
+        .stat-line { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem; background: #f8fafc; border-radius: 1.5rem; border: 1px solid #f1f5f9; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: default; }
+        .stat-line:hover { background: white; border-color: #e2e8f0; transform: scale(1.02); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.04); }
+        .stat-label { font-size: 1rem; font-weight: 700; color: #64748b; }
+        .stat-value-group { display: flex; align-items: baseline; gap: 0.4rem; font-weight: 900; font-size: 1.15rem; color: #0f172a; }
+        .stat-currency { font-size: 0.8rem; color: #94a3b8; font-weight: 700; }
+        .stat-neg { color: #f43f5e; }
+
+        /* --- AI CARD --- */
+        .modern-ai-card {
+          background: linear-gradient(145deg, #4f46e5, #7c3aed, #4338ca);
+          padding: 2.5rem;
+          border-radius: 2.5rem;
+          color: white;
+          position: relative;
+          overflow: hidden;
+          box-shadow: 0 20px 40px -10px rgba(79, 70, 229, 0.4);
+        }
+        .ai-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
+        .ai-icon-pulse { width: 14px; height: 14px; background: #10b981; border-radius: 50%; box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.2); animation: ai-pulse 2s infinite; }
+        .ai-header h3 { font-size: 1.5rem; font-weight: 900; letter-spacing: -0.02em; }
+        .ai-bubble { background: rgba(255,255,255,0.12); padding: 1.75rem; border-radius: 1.75rem; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px); }
+        .ai-tag { display: inline-block; font-size: 0.7rem; font-weight: 900; background: rgba(255,255,255,0.25); padding: 3px 10px; border-radius: 6px; margin-bottom: 1rem; letter-spacing: 0.15em; }
+        .ai-bubble p { font-size: 1rem; font-weight: 600; line-height: 1.7; color: rgba(255,255,255,0.95); }
+        .ai-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 2rem; font-size: 0.9rem; font-weight: 800; color: rgba(255,255,255,0.7); }
+
+        @keyframes ai-pulse { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); } 70% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+
         @media (max-width: 1200px) {
-          .charts-container-premium { grid-template-columns: 1fr; }
+          .modern-charts-row { grid-template-columns: 1fr; }
+        }
+        
+        @media (max-width: 768px) {
+          .modern-dashboard { padding: 1.5rem; }
+          .modern-header-row { flex-direction: column; align-items: flex-start; }
+          .modern-date-controls { width: 100%; flex-direction: column; align-items: stretch; }
+          .modern-divider-small { display: none; }
+          .modern-refresh-btn { margin-left: 0; margin-top: 0.5rem; }
         }
       `}} />
     </div>
   );
 }
 
-function MetricCardPremium({ title, value, unit, trend, isPositive, icon, color }) {
+function MetricCard({ title, value, icon, color, currency, unit, highlight }) {
   return (
-    <div className="metric-card-premium" style={{ borderLeft: `6px solid ${color}` }}>
-      <div className="m-header">
-        <div className="m-icon-box" style={{ background: `${color}15`, color: color }}>
-          {icon}
-        </div>
-        <div className={`m-trend ${isPositive ? 'up' : 'down'}`}>
-          {trend}
-        </div>
+    <div className={`metric-card ${highlight ? 'highlight' : ''}`}>
+      <div className={`metric-icon-box ${color}`}>
+        {React.cloneElement(icon, { size: 24, strokeWidth: 2.5 })}
       </div>
-      <span className="m-title">{title}</span>
-      <div className="m-value-row">
-        <span className="m-value">{value}</span>
-        <span className="m-unit" style={{ marginLeft: '4px' }}>{unit}</span>
+      <div>
+        <div className="metric-title">{title}</div>
+        <div className="metric-value-row">
+          {currency && <span className="metric-unit">{currency}</span>}
+          <span className="metric-value">{Math.round(parseFloat(value || 0)).toLocaleString()}</span>
+          {unit && <span className="metric-unit">{unit}</span>}
+        </div>
       </div>
     </div>
   );
 }
 
-function OperationItem({ title, count, status, icon, color, link }) {
+function OperationalSection({ title, icon, children }) {
   return (
-    <a href={link} className="op-item-modern">
-      <div className="op-icon-box" style={{ background: `${color}10`, color: color }}>
-        {icon}
+    <div className="modern-op-card">
+       <div className="op-header">
+         {React.cloneElement(icon, { size: 24, strokeWidth: 3 })}
+         <span>{title}</span>
+       </div>
+       <div className="op-lines">
+         {children}
+       </div>
+    </div>
+  );
+}
+
+function StatLine({ label, value, currency, unit, isNegative }) {
+  return (
+    <div className="stat-line">
+      <span className="stat-label">{label}</span>
+      <div className={`stat-value-group ${isNegative ? 'stat-neg' : ''}`}>
+        {currency && <span className="stat-currency">{currency}</span>}
+        <span>{Math.round(parseFloat(value || 0)).toLocaleString()}</span>
+        {unit && <span className="stat-currency">{unit}</span>}
       </div>
-      <div className="op-info">
-        <h4 className="op-title">{title}</h4>
-        <span className="op-status">{status}</span>
-      </div>
-      <div className="op-value" style={{ color: color }}>{count}</div>
-      <ChevronRight size={14} color="#cbd5e1" />
-    </a>
+    </div>
   );
 }

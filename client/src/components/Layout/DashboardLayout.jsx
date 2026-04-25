@@ -4,7 +4,7 @@ import {
   Users, UserPlus, Stethoscope, HeartPulse, Truck, Share2, 
   Menu, X, Database, ChevronDown, ChevronRight, Monitor, 
   Package, Tags, FileText, FlaskConical, DollarSign, 
-  LayoutDashboard, BarChart3, Settings, Bell, Search, ShoppingBag, Layout, CreditCard, Percent
+  LayoutDashboard, BarChart3, Settings, Bell, Search, ShoppingBag, Layout, CreditCard, Percent, TrendingUp
 } from 'lucide-react';
 
 const masterDataLinks = [
@@ -15,6 +15,7 @@ const masterDataLinks = [
   { path: '/suppliers', label: 'Suppliers', icon: Truck },
   { path: '/referred_persons', label: 'Referred Persons', icon: Share2 },
   { path: '/laboratories', label: 'Laboratories', icon: FlaskConical },
+  { path: '/refer_clinics', label: 'Refer Clinics', icon: Monitor },
 ];
 
 export default function DashboardLayout() {
@@ -42,6 +43,7 @@ export default function DashboardLayout() {
             <SidebarLink to="/reception" icon={<Monitor size={20} />} label="Reception" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/billing" icon={<FileText size={20} />} label="Billing" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/referral-payments" icon={<DollarSign size={20} />} label="Referral Payouts" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            <SidebarLink to="/clinic-referral-transactions" icon={<Share2 size={20} />} label="Clinic Referrals" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
           </div>
 
           <div className="nav-section">
@@ -57,6 +59,7 @@ export default function DashboardLayout() {
           <div className="nav-section">
             <span className="section-label">Analysis</span>
             <SidebarLink to="/reports" icon={<BarChart3 size={20} />} label="Reports Center" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            <SidebarLink to="/revenue-dashboard" icon={<TrendingUp size={20} />} label="Revenue Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/lab-payments" icon={<CreditCard size={20} />} label="Lab Payouts" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
           </div>
 

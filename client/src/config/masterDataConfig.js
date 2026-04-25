@@ -86,5 +86,15 @@ export const masterDataConfig = {
       { name: 'phone_number', label: 'Phone Number', type: 'text', required: false },
       { name: 'address', label: 'Address', type: 'text', required: false },
     ]
+  },
+  refer_clinics: {
+    title: 'Refer Clinics',
+    table: 'refer_clinics',
+    fields: [
+      { name: 'name', label: 'Clinic Name', type: 'text', required: true },
+      { name: 'opd_commission', label: 'OPD Commission', type: 'number', required: true },
+      { name: 'ot_commission', label: 'OT Commission', type: 'number', required: true },
+      { name: 'admission_commission', label: 'Admission Commission', type: 'number', required: true },
+    ]
   }
 };

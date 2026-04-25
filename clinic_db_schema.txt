@@ -1,0 +1,334 @@
+-- ==========================================
+-- Shwe See Sar Clinic - Full Database Schema & Documentation
+-- ==========================================
+
+/*
+OVERVIEW:
+This database is designed for a multi-module Clinic Management System. 
+It supports Patient Registration, Physician tracking, Inventory (FEFO), 
+Billing, Referral Commissions, and Laboratory Management.
+*/
+
+-- 1. MASTER DATA TABLES
+-- ------------------------------------------
+-- These tables store the core entities of the clinic.
+
+-- Stores patient demographics and unique codes.
+CREATE TABLE IF NOT EXISTS patients (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(50),
+    date_of_birth DATE,
+    gender VARCHAR(20) DEFAULT 'Other',
+    patient_code VARCHAR(50) UNIQUE, -- Format: PT-YYMMDD-XXXX
+    address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Stores specialized doctors available for appointments.
+CREATE TABLE IF NOT EXISTS physicians (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    specialty VARCHAR(100),
+    phone_number VARCHAR(50),
+    email VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Stores clinic medical officers (MO).
+CREATE TABLE IF NOT EXISTS medical_officers (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    qualification VARCHAR(255),
+    phone_number VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Stores nursing staff information.
+CREATE TABLE IF NOT EXISTS nurses (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    department VARCHAR(100),
+    phone_number VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Stores external suppliers for medicine and equipment procurement.
+CREATE TABLE IF NOT EXISTS suppliers (
+    id SERIAL PRIMARY KEY,
+    company_name VARCHAR(255) NOT NULL,
+    contact_person VARCHAR(255),
+    phone_number VARCHAR(50),
+    address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Stores external agents or doctors who refer patients to the clinic.
+CREATE TABLE IF NOT EXISTS referred_persons (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    organization VARCHAR(255),
+    phone_number VARCHAR(50),
+    referral_percentage DECIMAL(5, 2) DEFAULT 0.00, -- Default commission rate
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Stores partner laboratories for external investigations.
+CREATE TABLE IF NOT EXISTS laboratories (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(50),
+    address TEXT,
+    contact_person VARCHAR(255),
+    commission_percentage DECIMAL(5, 2) DEFAULT 0.00, -- Default lab discount rate
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Stores external clinics we refer patients to.
+CREATE TABLE IF NOT EXISTS refer_clinics (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    opd_commission DECIMAL(12, 2) DEFAULT 0.00,
+    ot_commission DECIMAL(12, 2) DEFAULT 0.00,
+    admission_commission DECIMAL(12, 2) DEFAULT 0.00,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- 2. STOCK & INVENTORY TABLES
+-- ------------------------------------------
+-- These tables manage the pharmacy and consumable items.
+
+-- High-level grouping (e.g., Pharmacy, Service, Laboratory Test).
+CREATE TABLE IF NOT EXISTS item_categories (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Detailed grouping (e.g., Antibiotics, Consultation).
+CREATE TABLE IF NOT EXISTS item_subcategories (
+    id SERIAL PRIMARY KEY,
+    category_id INTEGER REFERENCES item_categories(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (category_id, name)
+);
+
+-- The master list of all products/services.
+CREATE TABLE IF NOT EXISTS stock_items (
+    id SERIAL PRIMARY KEY,
+    subcategory_id INTEGER REFERENCES item_subcategories(id),
+    item_code VARCHAR(100) UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    unit VARCHAR(50), -- e.g., Tablet, Bottle
+    min_stock_level INTEGER DEFAULT 0, -- Used for low stock alerts
+    default_purchase_price DECIMAL(12, 2) DEFAULT 0.00,
+    default_sale_price DECIMAL(12, 2) DEFAULT 0.00,
+    pricing_method VARCHAR(50) DEFAULT 'MANUAL', -- 'MANUAL' or 'MARKUP_PERCENT'
+    markup_percentage DECIMAL(5, 2) DEFAULT 0.00,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Individual batches of items with specific expiry dates.
+-- Supports FEFO (First-Expiry, First-Out) logic.
+CREATE TABLE IF NOT EXISTS stock_batches (
+    id SERIAL PRIMARY KEY,
+    item_id INTEGER REFERENCES stock_items(id) ON DELETE CASCADE,
+    batch_number VARCHAR(100),
+    expiry_date DATE,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    purchase_price DECIMAL(12, 2) DEFAULT 0.00,
+    sale_price DECIMAL(12, 2) DEFAULT 0.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Audit log for every stock movement (Purchases, Sales, Adjustments).
+CREATE TABLE IF NOT EXISTS stock_transactions (
+    id SERIAL PRIMARY KEY,
+    item_id INTEGER REFERENCES stock_items(id),
+    batch_id INTEGER REFERENCES stock_batches(id),
+    type VARCHAR(10) NOT NULL, -- 'IN' (Purchase), 'OUT' (Sale), 'ADJUST' (Correction)
+    quantity INTEGER NOT NULL,
+    reason TEXT,
+    transaction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Negotiated pricing/commissions for specific tests at specific labs.
+CREATE TABLE IF NOT EXISTS laboratory_test_pricing (
+    id SERIAL PRIMARY KEY,
+    laboratory_id INTEGER REFERENCES laboratories(id) ON DELETE CASCADE,
+    item_id INTEGER REFERENCES stock_items(id) ON DELETE CASCADE,
+    purchase_price DECIMAL(12, 2) DEFAULT 0.00, -- Negotiated cost
+    commission_percentage DECIMAL(5, 2) DEFAULT 0.00, -- Lab discount rate
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(laboratory_id, item_id)
+);
+
+
+-- 3. RECEPTION & CLINICAL TABLES
+-- ------------------------------------------
+
+-- Patient visit scheduling linked to physicians.
+CREATE TABLE IF NOT EXISTS appointments (
+    id SERIAL PRIMARY KEY,
+    patient_id INTEGER REFERENCES patients(id) ON DELETE CASCADE,
+    physician_id INTEGER REFERENCES physicians(id) ON DELETE SET NULL,
+    appointment_date TIMESTAMP NOT NULL,
+    status VARCHAR(50) DEFAULT 'Scheduled', -- Scheduled, Completed, Cancelled
+    reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Bundled services/items sold as a single package (e.g., Health Checkup).
+CREATE TABLE IF NOT EXISTS gp_packages (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    price DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Mapping of which stock items are included in which GP Package.
+CREATE TABLE IF NOT EXISTS gp_package_items (
+    id SERIAL PRIMARY KEY,
+    package_id INTEGER REFERENCES gp_packages(id) ON DELETE CASCADE,
+    item_id INTEGER REFERENCES stock_items(id),
+    quantity INTEGER NOT NULL DEFAULT 1,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- 4. BILLING & VOUCHER TABLES
+-- ------------------------------------------
+-- These tables represent the financial heart of the clinic.
+
+-- Main voucher record for a patient visit.
+CREATE TABLE IF NOT EXISTS vouchers (
+    id SERIAL PRIMARY KEY,
+    voucher_number VARCHAR(50) UNIQUE NOT NULL, -- Format: VOU-YYMMDD-RAND
+    patient_id INTEGER REFERENCES patients(id),
+    physician_id INTEGER REFERENCES physicians(id), -- Attending doctor
+    total_amount DECIMAL(12, 2) DEFAULT 0.00,
+    discount_amount DECIMAL(12, 2) DEFAULT 0.00,
+    net_amount DECIMAL(12, 2) DEFAULT 0.00,
+    payment_method VARCHAR(50) DEFAULT 'Cash', -- Cash, KPay, etc.
+    payment_status VARCHAR(20) DEFAULT 'Paid',
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Line items within a voucher (Medicines, Labs, Packages).
+CREATE TABLE IF NOT EXISTS voucher_items (
+    id SERIAL PRIMARY KEY,
+    voucher_id INTEGER REFERENCES vouchers(id) ON DELETE CASCADE,
+    item_type VARCHAR(50), -- 'PHARMACY', 'PACKAGE', 'INVESTIGATION', 'SERVICE'
+    item_id INTEGER,
+    name VARCHAR(255),
+    quantity INTEGER DEFAULT 1,
+    unit_price DECIMAL(12, 2) DEFAULT 0.00,
+    subtotal DECIMAL(12, 2) DEFAULT 0.00,
+    laboratory_id INTEGER REFERENCES laboratories(id),
+    lab_cost_price DECIMAL(12, 2) DEFAULT 0.00, -- Amount clinic owes lab
+    lab_commission_pct DECIMAL(5, 2) DEFAULT 0.00, -- Negotiated percentage
+    lab_payment_status VARCHAR(20) DEFAULT 'Pending', -- Pending, Paid
+    lab_paid_at TIMESTAMP,
+    status VARCHAR(50) DEFAULT 'PENDING', -- Workflow status
+    result_file_path VARCHAR(255), -- Link to uploaded PDF
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tracking of referral fees owed to doctors or agents for a voucher.
+CREATE TABLE IF NOT EXISTS voucher_referrals (
+    id SERIAL PRIMARY KEY,
+    voucher_id INTEGER REFERENCES vouchers(id) ON DELETE CASCADE,
+    referred_person_id INTEGER REFERENCES referred_persons(id),
+    referral_type VARCHAR(50), -- 'Physician', 'Agent', etc.
+    percentage DECIMAL(5, 2) DEFAULT 0.00,
+    amount DECIMAL(12, 2) DEFAULT 0.00,
+    payment_status VARCHAR(20) DEFAULT 'Pending',
+    paid_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- 5. PROCUREMENT TABLES
+-- ------------------------------------------
+
+-- External purchase invoices from suppliers.
+CREATE TABLE IF NOT EXISTS purchases (
+    id SERIAL PRIMARY KEY,
+    invoice_number VARCHAR(100) UNIQUE NOT NULL,
+    supplier_id INTEGER REFERENCES suppliers(id),
+    total_amount DECIMAL(12, 2) DEFAULT 0.00,
+    paid_amount DECIMAL(12, 2) DEFAULT 0.00,
+    balance_amount DECIMAL(12, 2) DEFAULT 0.00,
+    payment_method VARCHAR(50),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Specific items included in a purchase invoice.
+CREATE TABLE IF NOT EXISTS purchase_items (
+    id SERIAL PRIMARY KEY,
+    purchase_id INTEGER REFERENCES purchases(id) ON DELETE CASCADE,
+    item_id INTEGER REFERENCES stock_items(id),
+    batch_number VARCHAR(100),
+    expiry_date DATE,
+    quantity INTEGER NOT NULL,
+    purchase_price DECIMAL(12, 2) DEFAULT 0.00,
+    sale_price DECIMAL(12, 2) DEFAULT 0.00,
+    subtotal DECIMAL(12, 2) DEFAULT 0.00
+);
+
+
+-- 6. EXTERNAL CLINIC REFERRALS
+-- ------------------------------------------
+-- Tracking patients referred to external clinics for specialized services.
+
+-- Record of a referral transaction and the commission owed to the clinic.
+CREATE TABLE IF NOT EXISTS clinic_referral_transactions (
+    id SERIAL PRIMARY KEY,
+    patient_id INTEGER REFERENCES patients(id),
+    refer_clinic_id INTEGER REFERENCES refer_clinics(id),
+    visit_type VARCHAR(50) NOT NULL CHECK (visit_type IN ('OPD', 'OT', 'ADMISSION')),
+    commission_amount DECIMAL(12, 2) DEFAULT 0.00,
+    payment_status VARCHAR(50) DEFAULT 'Pending',
+    notes TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
