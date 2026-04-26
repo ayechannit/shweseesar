@@ -13,6 +13,11 @@ import LabPaymentManagement from './pages/Laboratory/LabPaymentManagement';
 import LabTestPricing from './pages/Laboratory/LabTestPricing';
 import PurchaseManagement from './pages/Purchase/PurchaseManagement';
 import LaboratoryManagement from './pages/Laboratory/LaboratoryManagement';
+import LaboratoryDashboard from './pages/Laboratory/LaboratoryDashboard';
+import InventoryDashboard from './pages/Stock/InventoryDashboard';
+import PurchaseDashboard from './pages/Purchase/PurchaseDashboard';
+import ReferralDashboard from './pages/Referral/ReferralDashboard';
+import ExternalReferralDashboard from './pages/Referral/ExternalReferralDashboard';
 import ReportsPage from './pages/Reports/ReportsPage';
 import DetailedRevenueReport from './pages/Reports/DetailedRevenueReport';
 
@@ -26,6 +31,11 @@ function App() {
         <Route element={<DashboardLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<ExecutiveDashboard />} />
+          <Route path="/lab-dashboard" element={<LaboratoryDashboard />} />
+          <Route path="/inventory-dashboard" element={<InventoryDashboard />} />
+          <Route path="/purchase-dashboard" element={<PurchaseDashboard />} />
+          <Route path="/referral-dashboard" element={<ReferralDashboard />} />
+          <Route path="/external-referral-dashboard" element={<ExternalReferralDashboard />} />
           <Route path="/reception" element={<ReceptionDashboard />} />
           <Route path="/purchases" element={<PurchaseManagement />} />
           <Route path="/stock" element={<StockManagement />} />

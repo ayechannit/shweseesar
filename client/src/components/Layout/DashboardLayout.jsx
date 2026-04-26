@@ -4,7 +4,7 @@ import {
   Users, UserPlus, Stethoscope, HeartPulse, Truck, Share2, 
   Menu, X, Database, ChevronDown, ChevronRight, Monitor, 
   Package, Tags, FileText, FlaskConical, DollarSign, 
-  LayoutDashboard, BarChart3, Settings, Bell, Search, ShoppingBag, Layout, CreditCard, Percent, TrendingUp
+  LayoutDashboard, BarChart3, Settings, Bell, Search, ShoppingBag, Layout, CreditCard, Percent, TrendingUp, Activity, ShoppingCart
 } from 'lucide-react';
 
 const masterDataLinks = [
@@ -60,6 +60,11 @@ export default function DashboardLayout() {
             <span className="section-label">Analysis</span>
             <SidebarLink to="/reports" icon={<BarChart3 size={20} />} label="Reports Center" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/revenue-dashboard" icon={<TrendingUp size={20} />} label="Revenue Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            <SidebarLink to="/referral-dashboard" icon={<Users size={20} />} label="Referral Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            <SidebarLink to="/external-referral-dashboard" icon={<Share2 size={20} />} label="Ext. Referral Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            <SidebarLink to="/lab-dashboard" icon={<Activity size={20} />} label="Lab Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            <SidebarLink to="/inventory-dashboard" icon={<Package size={20} />} label="Inventory Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            <SidebarLink to="/purchase-dashboard" icon={<ShoppingCart size={20} />} label="Purchase Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/lab-payments" icon={<CreditCard size={20} />} label="Lab Payouts" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
           </div>
 

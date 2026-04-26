@@ -263,71 +263,83 @@ export default function VoucherEntry({ onSave, onCancel }) {
         {/* Left Column: Patient & Items */}
         <div className="flex flex-col gap-6">
           
-          {/* Patient Selection Card */}
-          <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0', overflow: 'visible' }}>
-             <div className="flex justify-between items-center mb-5">
-               <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <User size={18} className="text-blue-600" /> Patient Information
+          {/* Selection Cards: Physician & Patient */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+            
+            {/* Physician Selection Card */}
+            <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0' }}>
+               <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <User size={18} className="text-purple-600" /> Physician (Doctor)
                </h3>
-               <button 
-                type="button"
-                className="btn btn-outline" 
-                style={{ padding: '4px 10px', fontSize: '12px', borderStyle: 'dashed' }}
-                onClick={() => setIsAddPatientModalOpen(true)}
-               >
-                 <UserPlus size={14} style={{ marginRight: '4px' }} /> Register New
-               </button>
-             </div>
-             <div className="form-group mb-4">
-                <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Physician (Doctor)</label>
-                <select 
-                  className="form-control"
-                  style={{ height: '42px', borderRadius: '8px' }}
-                  value={selectedPhysicianId}
-                  onChange={(e) => setSelectedPhysicianId(e.target.value)}
-                >
-                  <option value="">-- Select Physician (Optional) --</option>
-                  {physicians.map(doc => (
-                    <option key={doc.id} value={doc.id}>{doc.name}</option>
-                  ))}
-                </select>
-             </div>
-             <div style={{ position: 'relative' }}>
-                <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Patient Search</label>
-                <div style={{ position: 'relative' }}>
-                  <Search size={20} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                  <input 
-                    type="text" className="form-control" placeholder="Search by patient name, code, or phone..."
-                    style={{ paddingLeft: '44px', height: '52px', borderRadius: '12px', fontSize: '1rem' }}
-                    value={selectedPatient ? `${selectedPatient.name} [${selectedPatient.patient_code}]` : patientSearch}
-                    onChange={(e) => { setPatientSearch(e.target.value); setSelectedPatient(null); setShowPatientResults(true); }}
-                    onFocus={() => setShowPatientResults(true)}
-                  />
-                  {selectedPatient && (
-                    <button type="button" onClick={() => setSelectedPatient(null)} style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }}>
-                      <X size={20} />
-                    </button>
-                  )}
-                </div>
-                
-                {showPatientResults && patientSearch && !selectedPatient && (
-                  <div className="search-dropdown shadow-lg" style={{ position: 'absolute', width: '100%', zIndex: 999, backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', marginTop: '8px', overflow: 'hidden' }}>
-                    {filteredPatients.length === 0 ? (
-                      <div className="p-6 text-center text-gray-500">No patients matching "{patientSearch}"</div>
-                    ) : filteredPatients.map(p => (
-                      <div key={p.id} className="p-4 hover:bg-blue-50 cursor-pointer transition-colors" style={{ borderBottom: '1px solid #f1f5f9' }} onClick={() => { setSelectedPatient(p); setShowPatientResults(false); }}>
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <div style={{ fontWeight: 700, color: '#1e293b' }}>{p.name}</div>
-                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>{p.patient_code} • {p.phone_number}</div>
-                          </div>
-                          <ChevronRight size={16} className="text-slate-300" />
-                        </div>
-                      </div>
+               <div className="form-group">
+                  <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Select Doctor</label>
+                  <select 
+                    className="form-control"
+                    style={{ height: '42px', borderRadius: '8px' }}
+                    value={selectedPhysicianId}
+                    onChange={(e) => setSelectedPhysicianId(e.target.value)}
+                  >
+                    <option value="">-- Select Physician (Optional) --</option>
+                    {physicians.map(doc => (
+                      <option key={doc.id} value={doc.id}>{doc.name}</option>
                     ))}
+                  </select>
+               </div>
+            </div>
+
+            {/* Patient Selection Card */}
+            <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0', overflow: 'visible' }}>
+               <div className="flex justify-between items-center mb-5">
+                 <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <User size={18} className="text-blue-600" /> Patient Information
+                 </h3>
+                 <button 
+                  type="button"
+                  className="btn btn-outline" 
+                  style={{ padding: '4px 10px', fontSize: '12px', borderStyle: 'dashed' }}
+                  onClick={() => setIsAddPatientModalOpen(true)}
+                 >
+                   <UserPlus size={14} style={{ marginRight: '4px' }} /> Register New
+                 </button>
+               </div>
+               
+               <div style={{ position: 'relative' }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Patient Search</label>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={20} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                    <input 
+                      type="text" className="form-control" placeholder="Search by name, code, or phone..."
+                      style={{ paddingLeft: '44px', height: '42px', borderRadius: '8px', fontSize: '1rem' }}
+                      value={selectedPatient ? `${selectedPatient.name} [${selectedPatient.patient_code}]` : patientSearch}
+                      onChange={(e) => { setPatientSearch(e.target.value); setSelectedPatient(null); setShowPatientResults(true); }}
+                      onFocus={() => setShowPatientResults(true)}
+                    />
+                    {selectedPatient && (
+                      <button type="button" onClick={() => setSelectedPatient(null)} style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }}>
+                        <X size={20} />
+                      </button>
+                    )}
                   </div>
-                )}
-             </div>
+                  
+                  {showPatientResults && patientSearch && !selectedPatient && (
+                    <div className="search-dropdown shadow-lg" style={{ position: 'absolute', width: '100%', zIndex: 999, backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', marginTop: '8px', overflow: 'hidden' }}>
+                      {filteredPatients.length === 0 ? (
+                        <div className="p-6 text-center text-gray-500">No patients matching "{patientSearch}"</div>
+                      ) : filteredPatients.map(p => (
+                        <div key={p.id} className="p-4 hover:bg-blue-50 cursor-pointer transition-colors" style={{ borderBottom: '1px solid #f1f5f9' }} onClick={() => { setSelectedPatient(p); setShowPatientResults(false); }}>
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <div style={{ fontWeight: 700, color: '#1e293b' }}>{p.name}</div>
+                              <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>{p.patient_code} • {p.phone_number}</div>
+                            </div>
+                            <ChevronRight size={16} className="text-slate-300" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+               </div>
+            </div>
           </div>
 
           {/* Items Section */}

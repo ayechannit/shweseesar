@@ -98,6 +98,7 @@ export default function BillingPage() {
                     <th>Voucher #</th>
                     <th>Date</th>
                     <th>Patient</th>
+                    <th>Physician</th>
                     <th>Total Amount</th>
                     <th>Method</th>
                     <th>Status</th>
@@ -119,6 +120,9 @@ export default function BillingPage() {
                       <td>
                         <div style={{ fontWeight: 600 }}>{v.patient_name}</div>
                         <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{v.patient_code}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 500, color: '#6366f1' }}>{v.physician_name || 'N/A'}</div>
                       </td>
                       <td style={{ fontWeight: 700, color: '#059669' }}>
                         {parseFloat(v.net_amount).toLocaleString()} MMK
@@ -202,6 +206,7 @@ export default function BillingPage() {
                       <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px' }}>
                         <h3 style={{ fontSize: '0.875rem', fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', marginBottom: '0.5rem' }}>Payment Details</h3>
                         <p style={{ margin: '0 0 0.25rem 0', color: '#475569' }}>Method: <span style={{ fontWeight: 600, color: '#1e293b' }}>{selectedVoucher.payment_method}</span></p>
+                        <p style={{ margin: 0, color: '#475569' }}>Physician: <span style={{ fontWeight: 600, color: '#6366f1' }}>{selectedVoucher.physician_name || 'N/A'}</span></p>
                       </div>
                     </div>
 

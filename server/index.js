@@ -490,6 +490,337 @@ app.get('/api/dashboard/revenue-profit', async (req, res) => {
   }
 });
 
+app.get('/api/dashboard/purchase', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const today = new Date();
+    const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const defaultEnd = today.toISOString().split('T')[0];
+    const start = startDate || defaultStart;
+    const end = endDate || defaultEnd;
+
+    const [metricsData, supplierSummaryData, unpaidInvoicesData] = await Promise.all([
+      db.query(`
+        SELECT 
+          COALESCE(SUM(total_amount), 0) as total_purchases,
+          COALESCE(SUM(paid_amount), 0) as total_paid,
+          COALESCE(SUM(balance_amount), 0) as total_balance
+        FROM purchases
+        WHERE DATE(created_at) BETWEEN $1 AND $2
+      `, [start, end]),
+
+      db.query(`
+        SELECT 
+          s.id as supplier_id,
+          s.company_name as supplier_name,
+          COUNT(p.id) as total_invoices,
+          COALESCE(SUM(p.total_amount), 0) as total_purchased,
+          COALESCE(SUM(p.paid_amount), 0) as total_paid,
+          COALESCE(SUM(p.balance_amount), 0) as total_balance
+        FROM purchases p
+        LEFT JOIN suppliers s ON p.supplier_id = s.id
+        WHERE DATE(p.created_at) BETWEEN $1 AND $2
+        GROUP BY s.id, s.company_name
+        ORDER BY total_purchased DESC
+      `, [start, end]),
+
+      db.query(`
+        SELECT 
+          p.id,
+          p.invoice_number,
+          p.created_at as invoice_date,
+          p.total_amount,
+          p.paid_amount,
+          p.balance_amount,
+          s.company_name as supplier_name
+        FROM purchases p
+        LEFT JOIN suppliers s ON p.supplier_id = s.id
+        WHERE p.balance_amount > 0 AND DATE(p.created_at) BETWEEN $1 AND $2
+        ORDER BY p.created_at ASC
+      `, [start, end])
+    ]);
+
+    res.json({
+      metrics: {
+        total_purchases: parseFloat(metricsData.rows[0].total_purchases) || 0,
+        total_paid: parseFloat(metricsData.rows[0].total_paid) || 0,
+        total_balance: parseFloat(metricsData.rows[0].total_balance) || 0
+      },
+      reports: {
+        supplier_summary: supplierSummaryData.rows,
+        unpaid_invoices: unpaidInvoicesData.rows
+      }
+    });
+  } catch (err) {
+    console.error('PURCHASE DASHBOARD ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch purchase dashboard data' });
+  }
+});
+
+app.get('/api/dashboard/external-referral', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const today = new Date();
+    const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const defaultEnd = today.toISOString().split('T')[0];
+    const start = startDate || defaultStart;
+    const end = endDate || defaultEnd;
+
+    const [metricsData, byClinicData, byVisitTypeData] = await Promise.all([
+      db.query(`
+        SELECT 
+          COUNT(id) as total_referrals_out,
+          COALESCE(SUM(commission_amount), 0) as total_income,
+          COALESCE(SUM(CASE WHEN payment_status = 'Pending' THEN commission_amount ELSE 0 END), 0) as pending_income
+        FROM clinic_referral_transactions
+        WHERE DATE(created_at) BETWEEN $1 AND $2 AND is_active = true
+      `, [start, end]),
+
+      db.query(`
+        SELECT 
+          rc.id as clinic_id,
+          rc.name as clinic_name,
+          COUNT(crt.id) as total_referrals,
+          COALESCE(SUM(crt.commission_amount), 0) as total_income
+        FROM clinic_referral_transactions crt
+        LEFT JOIN refer_clinics rc ON crt.refer_clinic_id = rc.id
+        WHERE DATE(crt.created_at) BETWEEN $1 AND $2 AND crt.is_active = true
+        GROUP BY rc.id, rc.name
+        ORDER BY total_income DESC
+      `, [start, end]),
+
+      db.query(`
+        SELECT 
+          COALESCE(visit_type, 'UNSPECIFIED') as visit_type,
+          COUNT(id) as total_referrals,
+          COALESCE(SUM(commission_amount), 0) as total_income
+        FROM clinic_referral_transactions
+        WHERE DATE(created_at) BETWEEN $1 AND $2 AND is_active = true
+        GROUP BY visit_type
+        ORDER BY total_income DESC
+      `, [start, end])
+    ]);
+
+    res.json({
+      metrics: {
+        total_referrals_out: parseInt(metricsData.rows[0].total_referrals_out) || 0,
+        total_income: parseFloat(metricsData.rows[0].total_income) || 0,
+        pending_income: parseFloat(metricsData.rows[0].pending_income) || 0
+      },
+      reports: {
+        by_clinic: byClinicData.rows,
+        by_visit_type: byVisitTypeData.rows
+      }
+    });
+  } catch (err) {
+    console.error('EXTERNAL REFERRAL DASHBOARD ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch external referral dashboard data' });
+  }
+});
+
+app.get('/api/dashboard/referral', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const today = new Date();
+    const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const defaultEnd = today.toISOString().split('T')[0];
+    const start = startDate || defaultStart;
+    const end = endDate || defaultEnd;
+
+    const [metricsData, topReferrersData] = await Promise.all([
+      db.query(`
+        SELECT 
+          COUNT(vr.id) as total_referrals,
+          COALESCE(SUM(vr.amount), 0) as total_commission_cost,
+          COALESCE(SUM(CASE WHEN vr.payment_status = 'Pending' THEN vr.amount ELSE 0 END), 0) as pending_commission
+        FROM voucher_referrals vr
+        JOIN vouchers v ON vr.voucher_id = v.id
+        WHERE DATE(v.created_at) BETWEEN $1 AND $2
+      `, [start, end]),
+
+      db.query(`
+        SELECT 
+          rp.id as referred_person_id,
+          rp.name as referrer_name,
+          rp.organization as organization,
+          COUNT(vr.id) as total_referrals,
+          COALESCE(SUM(vr.amount), 0) as total_commission
+        FROM voucher_referrals vr
+        JOIN vouchers v ON vr.voucher_id = v.id
+        LEFT JOIN referred_persons rp ON vr.referred_person_id = rp.id
+        WHERE DATE(v.created_at) BETWEEN $1 AND $2
+        GROUP BY rp.id, rp.name, rp.organization
+        ORDER BY total_commission DESC
+      `, [start, end])
+    ]);
+
+    res.json({
+      metrics: {
+        total_referrals: parseInt(metricsData.rows[0].total_referrals) || 0,
+        total_commission_cost: parseFloat(metricsData.rows[0].total_commission_cost) || 0,
+        pending_commission: parseFloat(metricsData.rows[0].pending_commission) || 0
+      },
+      reports: {
+        top_referrers: topReferrersData.rows
+      }
+    });
+  } catch (err) {
+    console.error('REFERRAL DASHBOARD ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch referral dashboard data' });
+  }
+});
+
+app.get('/api/dashboard/inventory', async (req, res) => {
+  try {
+    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const [
+      totalStockValueData,
+      lowStockData,
+      expiringData,
+      deadStockData
+    ] = await Promise.all([
+      db.query(`
+        SELECT COALESCE(SUM(quantity * purchase_price), 0) as total_stock_value
+        FROM stock_batches
+        WHERE quantity > 0
+      `),
+
+      db.query(`
+        SELECT si.id, si.item_code, si.name, si.unit, si.min_stock_level, COALESCE(SUM(sb.quantity), 0) as current_stock
+        FROM stock_items si
+        LEFT JOIN stock_batches sb ON si.id = sb.item_id AND sb.quantity > 0
+        WHERE si.is_active = true
+        GROUP BY si.id, si.item_code, si.name, si.unit, si.min_stock_level
+        HAVING COALESCE(SUM(sb.quantity), 0) < si.min_stock_level
+        ORDER BY current_stock ASC
+      `),
+
+      db.query(`
+        SELECT si.item_code, si.name, si.unit, sb.batch_number, sb.expiry_date, sb.quantity as current_stock
+        FROM stock_batches sb
+        JOIN stock_items si ON sb.item_id = si.id
+        WHERE sb.expiry_date <= $1 AND sb.quantity > 0 AND si.is_active = true
+        ORDER BY sb.expiry_date ASC
+      `, [thirtyDaysFromNow]),
+
+      db.query(`
+        SELECT 
+          si.item_code, 
+          si.name, 
+          si.unit, 
+          COALESCE((SELECT SUM(quantity) FROM stock_batches WHERE item_id = si.id AND quantity > 0), 0) as current_stock,
+          (SELECT MAX(transaction_date) FROM stock_transactions WHERE item_id = si.id AND type = 'OUT') as last_sold_date
+        FROM stock_items si
+        WHERE si.is_active = true
+        AND COALESCE((SELECT SUM(quantity) FROM stock_batches WHERE item_id = si.id AND quantity > 0), 0) > 0
+        AND (
+          (SELECT MAX(transaction_date) FROM stock_transactions WHERE item_id = si.id AND type = 'OUT') < NOW() - INTERVAL '90 days'
+          OR 
+          (SELECT MAX(transaction_date) FROM stock_transactions WHERE item_id = si.id AND type = 'OUT') IS NULL
+        )
+        ORDER BY current_stock DESC
+      `)
+    ]);
+
+    res.json({
+      metrics: {
+        total_stock_value: parseFloat(totalStockValueData.rows[0].total_stock_value),
+        low_stock_items: lowStockData.rows.length,
+        expiring_items: expiringData.rows.length
+      },
+      reports: {
+        low_stock_report: lowStockData.rows,
+        expiry_report: expiringData.rows,
+        dead_stock: deadStockData.rows
+      }
+    });
+  } catch (err) {
+    console.error('INVENTORY DASHBOARD ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch inventory dashboard data' });
+  }
+});
+
+app.get('/api/dashboard/laboratory', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const today = new Date();
+    const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const defaultEnd = today.toISOString().split('T')[0];
+    const start = startDate || defaultStart;
+    const end = endDate || defaultEnd;
+
+    const [metricsData, pendingPaymentsData, profitByLabData] = await Promise.all([
+      // metrics: lab_revenue, lab_cost, lab_profit
+      db.query(`
+        SELECT 
+          COALESCE(SUM(vi.subtotal), 0) as lab_revenue,
+          COALESCE(SUM(vi.lab_cost_price), 0) as lab_cost,
+          COALESCE(SUM(
+            CASE 
+              WHEN vi.lab_cost_price > 0 THEN vi.subtotal - vi.lab_cost_price
+              ELSE vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100
+            END
+          ), 0) as lab_profit
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        WHERE vi.item_type = 'INVESTIGATION' AND DATE(v.created_at) BETWEEN $1 AND $2
+      `, [start, end]),
+
+      // reports: pending_lab_payments
+      db.query(`
+        SELECT vi.*, v.voucher_number, v.created_at as voucher_date, l.name as laboratory_name
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        LEFT JOIN laboratories l ON vi.laboratory_id = l.id
+        WHERE vi.item_type = 'INVESTIGATION' AND vi.lab_payment_status = 'Pending'
+        ORDER BY v.created_at DESC
+      `),
+
+      // reports: profit_by_lab
+      db.query(`
+        SELECT 
+          l.id as laboratory_id,
+          l.name as laboratory_name,
+          COALESCE(SUM(vi.subtotal), 0) as revenue,
+          COALESCE(SUM(
+            CASE 
+              WHEN vi.lab_cost_price > 0 THEN vi.subtotal - vi.lab_cost_price
+              ELSE vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100
+            END
+          ), 0) as profit
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        LEFT JOIN laboratories l ON vi.laboratory_id = l.id
+        WHERE vi.item_type = 'INVESTIGATION' AND DATE(v.created_at) BETWEEN $1 AND $2
+        GROUP BY l.id, l.name
+        ORDER BY profit DESC
+      `, [start, end])
+    ]);
+
+    const metrics = metricsData.rows[0];
+    const lab_revenue = parseFloat(metrics.lab_revenue);
+    const lab_profit = parseFloat(metrics.lab_profit);
+    const lab_margin_pct = lab_revenue > 0 ? (lab_profit / lab_revenue * 100) : 0;
+
+    res.json({
+      metrics: {
+        lab_revenue,
+        lab_cost: parseFloat(metrics.lab_cost),
+        lab_profit,
+        lab_margin_pct
+      },
+      reports: {
+        pending_lab_payments: pendingPaymentsData.rows,
+        profit_by_lab: profitByLabData.rows
+      }
+    });
+  } catch (err) {
+    console.error('LABORATORY DASHBOARD ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch laboratory dashboard data' });
+  }
+});
+
 app.get('/api/dashboard/executive', async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -1986,9 +2317,10 @@ app.get('/api/billing/vouchers', async (req, res) => {
     const total = parseInt(countRes.rows[0].count);
 
     const result = await db.query(`
-      SELECT v.*, p.name as patient_name, p.patient_code
+      SELECT v.*, p.name as patient_name, p.patient_code, doc.name as physician_name
       FROM vouchers v
       LEFT JOIN patients p ON v.patient_id = p.id
+      LEFT JOIN physicians doc ON v.physician_id = doc.id
       ORDER BY v.created_at DESC
       LIMIT $1 OFFSET $2
     `, [limit, offset]);
@@ -2011,9 +2343,10 @@ app.get('/api/billing/vouchers/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const voucherRes = await db.query(`
-      SELECT v.*, p.name as patient_name, p.patient_code, p.phone_number as patient_phone
+      SELECT v.*, p.name as patient_name, p.patient_code, p.phone_number as patient_phone, doc.name as physician_name
       FROM vouchers v
       LEFT JOIN patients p ON v.patient_id = p.id
+      LEFT JOIN physicians doc ON v.physician_id = doc.id
       WHERE v.id = $1
     `, [id]);
     
