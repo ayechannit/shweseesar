@@ -16,6 +16,7 @@ const masterDataLinks = [
   { path: '/referred_persons', label: 'Referred Persons', icon: Share2 },
   { path: '/laboratories', label: 'Laboratories', icon: FlaskConical },
   { path: '/refer_clinics', label: 'Refer Clinics', icon: Monitor },
+  { path: '/voucher-settings', label: 'Voucher Settings', icon: Settings },
 ];
 
 export default function DashboardLayout() {

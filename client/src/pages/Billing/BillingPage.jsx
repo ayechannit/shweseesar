@@ -8,6 +8,7 @@ export default function BillingPage() {
   const [view, setView] = useState('list'); // 'list' or 'create'
   const [vouchers, setVouchers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [printSettings, setPrintSettings] = useState(null);
   
   // Modal State
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -17,6 +18,22 @@ export default function BillingPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [limit] = useState(10);
+
+  useEffect(() => {
+    fetchPrintSettings();
+  }, []);
+
+  const fetchPrintSettings = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/settings/voucher`);
+      if (res.ok) {
+        const data = await res.json();
+        setPrintSettings(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch print settings', err);
+    }
+  };
 
   useEffect(() => {
     if (view === 'list') {
@@ -55,20 +72,99 @@ export default function BillingPage() {
       const res = await fetch(`${API_BASE}/billing/vouchers/${id}`);
       const data = await res.json();
       setSelectedVoucher(data);
+      setIsViewModalOpen(true);
+
+      // Give React time to render the modal and the printable content
       setTimeout(() => {
         const printContent = document.getElementById('printable-voucher');
         if (printContent) {
-          const originalContent = document.body.innerHTML;
-          document.body.innerHTML = printContent.innerHTML;
-          window.print();
-          document.body.innerHTML = originalContent;
-          window.location.reload(); // Reload to restore React state and event listeners
+          // Create a hidden iframe for printing
+          const iframe = document.createElement('iframe');
+          iframe.style.position = 'fixed';
+          iframe.style.right = '0';
+          iframe.style.bottom = '0';
+          iframe.style.width = '0';
+          iframe.style.height = '0';
+          iframe.style.border = '0';
+          document.body.appendChild(iframe);
+
+          const doc = iframe.contentWindow.document;
+          
+          // Add the content and basic styles to the iframe
+          doc.open();
+          doc.write(`
+            <html>
+              <head>
+                <title>Print Voucher - ${data.voucher_number}</title>
+                <style>
+                  body { 
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    margin: 0;
+                    padding: 0;
+                    color: #0f172a;
+                  }
+                  @page { 
+                    margin: ${printSettings?.margin_top || '10px'} ${printSettings?.margin_right || '10px'} ${printSettings?.margin_bottom || '10px'} ${printSettings?.margin_left || '10px'}; 
+                  }
+                  #printable-voucher { 
+                    width: ${printSettings?.width || '100%'}; 
+                    margin: 0 auto;
+                    background: white;
+                  }
+                  .status-badge {
+                    display: inline-block;
+                    padding: 0.25rem 0.5rem;
+                    border-radius: 9999px;
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                  }
+                  .status-completed {
+                    background-color: #d1fae5;
+                    color: #059669;
+                  }
+                  table {
+                    width: 100%;
+                    border-collapse: collapse;
+                  }
+                  th, td {
+                    text-align: left;
+                  }
+                </style>
+              </head>
+              <body>
+                <div id="printable-voucher">
+                  ${printContent.innerHTML}
+                </div>
+              </body>
+            </html>
+          `);
+          doc.close();
+
+          // Wait for the iframe to fully load before printing
+          setTimeout(() => {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            // Remove the iframe after printing
+            setTimeout(() => {
+              document.body.removeChild(iframe);
+            }, 1000);
+          }, 500);
         }
-      }, 100);
+      }, 600);
     } catch (err) {
       console.error(err);
       alert('Failed to fetch voucher for printing');
     }
+  };
+
+  const handleVoucherCreated = async (id) => {
+    setView('list');
+    setPage(1);
+    await fetchVouchers();
+    setTimeout(() => {
+      handleView(id);
+    }, 300);
   };
 
   const closeViewModal = () => {
@@ -184,11 +280,25 @@ export default function BillingPage() {
                 <div style={{ maxHeight: '75vh', overflowY: 'auto', padding: '1.5rem' }}>
                   
                   {/* Printable Area Wrapper */}
-                  <div id="printable-voucher" style={{ backgroundColor: 'white' }}>
-                    <div style={{ marginBottom: '2rem', borderBottom: '2px solid #f1f5f9', paddingBottom: '1.5rem', display: 'flex', justifyContent: 'space-between' }}>
-                      <div>
-                        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.5rem 0' }}>Shwe See Sar Clinic</h1>
-                        <p style={{ margin: 0, color: '#64748b' }}>Voucher Date: {new Date(selectedVoucher.created_at).toLocaleString()}</p>
+                  <div id="printable-voucher" style={{ backgroundColor: 'white', width: printSettings?.width || '100%', minHeight: printSettings?.height || 'auto', margin: '0 auto' }}>
+                    <div style={{ marginBottom: '2rem', borderBottom: '2px solid #f1f5f9', paddingBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        {printSettings?.icon_path && (
+                          <img src={`${API_BASE.replace('/api', '')}/uploads/${printSettings.icon_path}`} alt="Logo" style={{ width: '60px', height: '60px', objectFit: 'contain' }} />
+                        )}
+                        <div>
+                          {printSettings?.address && printSettings.address.includes('\n') ? (
+                            <>
+                              <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.5rem 0' }}>{printSettings.address.split('\n')[0]}</h1>
+                              <p style={{ margin: 0, color: '#64748b', whiteSpace: 'pre-line', fontSize: '0.875rem' }}>
+                                {printSettings.address.substring(printSettings.address.indexOf('\n') + 1)}
+                              </p>
+                            </>
+                          ) : (
+                            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', margin: '0 0 0.5rem 0' }}>{printSettings?.address || 'Shwe See Sar Clinic'}</h1>
+                          )}
+                          <p style={{ margin: '0.25rem 0 0 0', color: '#64748b', fontSize: '0.875rem' }}>Voucher Date: {new Date(selectedVoucher.created_at).toLocaleString()}</p>
+                        </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: '#2563eb' }}>{selectedVoucher.voucher_number}</h2>
@@ -258,36 +368,16 @@ export default function BillingPage() {
                       </div>
                     </div>
 
-                    {selectedVoucher.referrals && selectedVoucher.referrals.length > 0 && (
-                      <>
-                        <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1rem', color: '#64748b' }}>Referrals & Commissions</h3>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', backgroundColor: '#f8fafc', borderRadius: '8px', overflow: 'hidden' }}>
-                          <thead style={{ backgroundColor: '#e2e8f0' }}>
-                            <tr>
-                              <th style={{ padding: '0.5rem 1rem', textAlign: 'left', color: '#475569' }}>Name</th>
-                              <th style={{ padding: '0.5rem 1rem', textAlign: 'left', color: '#475569' }}>Type</th>
-                              <th style={{ padding: '0.5rem 1rem', textAlign: 'center', color: '#475569' }}>Rate</th>
-                              <th style={{ padding: '0.5rem 1rem', textAlign: 'right', color: '#475569' }}>Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {selectedVoucher.referrals.map(ref => (
-                              <tr key={ref.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{ref.referred_person_name}</td>
-                                <td style={{ padding: '0.75rem 1rem', color: '#64748b' }}>{ref.referral_type}</td>
-                                <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>{ref.percentage}%</td>
-                                <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: 600 }}>{parseFloat(ref.amount).toLocaleString()}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </>
-                    )}
-
                     {selectedVoucher.notes && (
                       <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: '#fffbeb', borderLeft: '4px solid #f59e0b', color: '#92400e' }}>
                         <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', fontWeight: 700 }}>Notes</h4>
                         <p style={{ margin: 0, fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>{selectedVoucher.notes}</p>
+                      </div>
+                    )}
+                    
+                    {printSettings?.description && (
+                      <div style={{ marginTop: '2rem', textAlign: 'center', color: '#475569', fontSize: '0.875rem', borderTop: '1px dashed #cbd5e1', paddingTop: '1rem', whiteSpace: 'pre-line' }}>
+                        {printSettings.description}
                       </div>
                     )}
                   </div>
@@ -308,7 +398,7 @@ export default function BillingPage() {
         </>
       ) : (
         <VoucherEntry 
-          onSave={() => { setView('list'); setPage(1); }}
+          onSave={handleVoucherCreated}
           onCancel={() => setView('list')}
         />
       )}

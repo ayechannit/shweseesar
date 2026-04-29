@@ -22,6 +22,7 @@ import ReportsPage from './pages/Reports/ReportsPage';
 import DetailedRevenueReport from './pages/Reports/DetailedRevenueReport';
 
 import ClinicReferralTransaction from './pages/Referral/ClinicReferralTransaction';
+import VoucherSettings from './pages/MasterData/VoucherSettings';
 
 function App() {
   console.log('App rendering, current location:', window.location.pathname);
@@ -49,6 +50,7 @@ function App() {
           <Route path="/laboratory-investigations" element={<LaboratoryManagement />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/revenue-dashboard" element={<DetailedRevenueReport />} />
+          <Route path="/voucher-settings" element={<VoucherSettings />} />
           <Route path="/patients" element={<MasterDataPage type="patients" />} />
           <Route path="/physicians" element={<MasterDataPage type="physicians" />} />
           <Route path="/medical_officers" element={<MasterDataPage type="medical_officers" />} />

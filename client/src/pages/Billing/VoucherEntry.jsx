@@ -204,7 +204,8 @@ export default function VoucherEntry({ onSave, onCancel }) {
       });
 
       if (res.ok) {
-        onSave();
+        const data = await res.json();
+        onSave(data.id);
       } else {
         const err = await res.json();
         alert(err.error || 'Failed to create voucher');
