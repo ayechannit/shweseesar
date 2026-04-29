@@ -163,7 +163,7 @@ export default function VoucherSettings() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">Print Width</label>
                 <input 
@@ -192,7 +192,7 @@ export default function VoucherSettings() {
 
             <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
               <h3 style={{ fontWeight: 600, color: '#0f172a', marginBottom: '1rem', fontSize: '1.125rem' }}>Print Margins</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem' }}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontSize: '0.875rem' }}>Top Margin</label>
                   <input 

@@ -151,7 +151,7 @@ const ReferralView = ({ data }) => (
 
 const StockView = ({ data }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
       <div className="card-modern p-6" style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: 'white', padding: '1.5rem' }}>
         <span className="metric-label" style={{ color: 'rgba(255,255,255,0.7)' }}>Asset Valuation</span><div className="metric-value" style={{ color: 'white' }}>{data.valuation?.toLocaleString()}</div>
       </div>
@@ -175,7 +175,7 @@ const StockView = ({ data }) => (
 
 const PatientView = ({ data }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
       <div className="card-modern" style={{ padding: '1.5rem', borderTop: '4px solid #3b82f6' }}><span className="metric-label">New patients</span><div className="metric-value">{data.newPatientsCount}</div></div>
       <div className="card-modern" style={{ padding: '1.5rem', borderTop: '4px solid #8b5cf6' }}><span className="metric-label">Returning</span><div className="metric-value">{data.returningPatientsCount}</div></div>
       <div className="card-modern" style={{ padding: '1.5rem' }}><span className="metric-label">Demographics</span>{data.genderStats?.map((g, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}><span>{g.gender || 'Other'}</span><strong>{g.count}</strong></div>)}</div>

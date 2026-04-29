@@ -259,13 +259,13 @@ export default function VoucherEntry({ onSave, onCancel }) {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: '2rem' }}>
+      <div className="flex flex-col lg:flex-row gap-8">
         
         {/* Left Column: Patient & Items */}
         <div className="flex flex-col gap-6">
           
           {/* Selection Cards: Physician & Patient */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             
             {/* Physician Selection Card */}
             <div className="card shadow-sm" style={{ padding: '1.5rem', border: '1px solid #e2e8f0' }}>
