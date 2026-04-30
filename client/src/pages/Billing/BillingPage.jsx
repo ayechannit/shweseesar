@@ -316,7 +316,12 @@ export default function BillingPage() {
                       <div style={{ backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px' }}>
                         <h3 style={{ fontSize: '0.875rem', fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', marginBottom: '0.5rem' }}>Payment Details</h3>
                         <p style={{ margin: '0 0 0.25rem 0', color: '#475569' }}>Method: <span style={{ fontWeight: 600, color: '#1e293b' }}>{selectedVoucher.payment_method}</span></p>
-                        <p style={{ margin: 0, color: '#475569' }}>Physician: <span style={{ fontWeight: 600, color: '#6366f1' }}>{selectedVoucher.physician_name || 'N/A'}</span></p>
+                        <p style={{ margin: '0 0 0.25rem 0', color: '#475569' }}>Physician: <span style={{ fontWeight: 600, color: '#6366f1' }}>{selectedVoucher.physician_name || 'N/A'}</span></p>
+                        {selectedVoucher.tca_date && (
+                          <p style={{ margin: '0.25rem 0 0 0', color: '#2563eb', fontWeight: 700 }}>
+                            TCA Date: {new Date(selectedVoucher.tca_date).toLocaleDateString()}
+                          </p>
+                        )}
                       </div>
                     </div>
 

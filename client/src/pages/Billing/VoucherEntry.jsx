@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Trash2, Save, X, User, Package, Monitor, UserPlus, Calculator, Receipt, CreditCard, ChevronRight, AlertCircle } from 'lucide-react';
+import { Search, Plus, Trash2, Save, X, User, Package, Monitor, UserPlus, Calculator, Receipt, CreditCard, ChevronRight, AlertCircle, Calendar } from 'lucide-react';
 import AddPatientModal from '../../components/Modals/AddPatientModal';
 
 const API_BASE = 'http://localhost:5000/api';
@@ -27,6 +27,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [notes, setNotes] = useState('');
+  const [tcaDate, setTcaDate] = useState('');
   const [loading, setLoading] = useState(false);
 
   // --- Add Patient Modal State ---
@@ -199,7 +200,8 @@ export default function VoucherEntry({ onSave, onCancel }) {
           discount_amount: parseFloat(discount) || 0,
           net_amount: netTotal,
           payment_method: paymentMethod,
-          notes
+          notes,
+          tca_date: tcaDate
         })
       });
 
@@ -561,6 +563,34 @@ export default function VoucherEntry({ onSave, onCancel }) {
                <div style={{ fontSize: '2.25rem', fontWeight: 900, color: '#2563eb', letterSpacing: '-0.02em' }}>
                  {netTotal.toLocaleString()} <span style={{ fontSize: '0.875rem', color: '#94a3b8', fontWeight: 500 }}>MMK</span>
                </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 mb-6">
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '0.875rem' }}>
+                  TCA Date (To Come Again)
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input 
+                    type="date" 
+                    className="form-control" 
+                    style={{ height: '42px', borderRadius: '8px', paddingLeft: '36px' }}
+                    value={tcaDate}
+                    onChange={(e) => setTcaDate(e.target.value)}
+                  />
+                  <Calendar size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '0.875rem' }}>Notes</label>
+                <textarea 
+                  className="form-control" 
+                  style={{ borderRadius: '8px', minHeight: '80px', padding: '10px', fontSize: '0.9rem' }}
+                  placeholder="Optional details or instructions..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              </div>
             </div>
 
             <div className="form-group mb-6">

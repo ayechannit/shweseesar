@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { 
   Users, UserPlus, Stethoscope, HeartPulse, Truck, Share2, 
   Menu, X, Database, ChevronDown, ChevronRight, Monitor, 
   Package, Tags, FileText, FlaskConical, DollarSign, 
-  LayoutDashboard, BarChart3, Settings, Bell, Search, ShoppingBag, Layout, CreditCard, Percent, TrendingUp, Activity, ShoppingCart
+  LayoutDashboard, BarChart3, Settings, Bell, Search, ShoppingBag, Layout, CreditCard, Percent, TrendingUp, Activity, ShoppingCart, Calendar
 } from 'lucide-react';
 
 const masterDataLinks = [
@@ -19,9 +19,13 @@ const masterDataLinks = [
   { path: '/voucher-settings', label: 'Voucher Settings', icon: Settings },
 ];
 
+const API_BASE = 'http://localhost:5000/api';
+
 export default function DashboardLayout() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [isMasterDataOpen, setIsMasterDataOpen] = useState(false);
+  
+  const navigate = useNavigate();
 
   const toggleDrawer = () => setIsDrawerOpen(!isDrawerOpen);
 
@@ -59,12 +63,14 @@ export default function DashboardLayout() {
 
           <div className="nav-section">
             <span className="section-label">Analysis</span>
+            <SidebarLink to="/tca-dashboard" icon={<Calendar size={20} />} label="TCA Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/reports" icon={<BarChart3 size={20} />} label="Reports Center" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/revenue-dashboard" icon={<TrendingUp size={20} />} label="Revenue Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/referral-dashboard" icon={<Users size={20} />} label="Referral Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/external-referral-dashboard" icon={<Share2 size={20} />} label="Ext. Referral Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/lab-dashboard" icon={<Activity size={20} />} label="Lab Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/inventory-dashboard" icon={<Package size={20} />} label="Inventory Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            <SidebarLink to="/stock-balance-report" icon={<FileText size={20} />} label="Stock Balance Report" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/purchase-dashboard" icon={<ShoppingCart size={20} />} label="Purchase Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
             <SidebarLink to="/lab-payments" icon={<CreditCard size={20} />} label="Lab Payouts" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
           </div>
@@ -117,15 +123,8 @@ export default function DashboardLayout() {
             <Menu size={22} />
           </button>
           
-          {/* <div className="topbar-search">
-            <Search size={18} color="#94a3b8" />
-            <input type="text" placeholder="Search patients or vouchers..." />
-          </div> */}
+          <div style={{ flex: 1 }}></div>
 
-          <div className="topbar-actions">
-            <button className="icon-btn-modern"><Bell size={20} /><span className="badge-dot"></span></button>
-            <button className="icon-btn-modern"><Settings size={20} /></button>
-          </div>
         </header>
 
         <div className="content-scroller">
@@ -156,6 +155,8 @@ export default function DashboardLayout() {
         /* Sidebar Styles */
         .sidebar-modern {
           width: var(--sidebar-width);
+          min-width: var(--sidebar-width); /* Add min-width to prevent shrinking */
+          box-sizing: border-box; /* Ensure padding/borders don't affect width */
           background: var(--sidebar-bg);
           border-right: 1px solid #e2e8f0;
           display: flex;
@@ -311,51 +312,6 @@ export default function DashboardLayout() {
           gap: 2rem;
         }
 
-        .topbar-search {
-          flex: 1;
-          max-width: 500px;
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          background: #f1f5f9;
-          padding: 0.6rem 1.25rem;
-          border-radius: 12px;
-        }
-        .topbar-search input {
-          background: none;
-          border: none;
-          outline: none;
-          width: 100%;
-          font-size: 0.9rem;
-          color: #1e293b;
-          font-weight: 500;
-        }
-
-        .topbar-actions { display: flex; align-items: center; gap: 1rem; }
-        .icon-btn-modern {
-          width: 42px;
-          height: 42px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: white;
-          border: 1px solid #e2e8f0;
-          border-radius: 12px;
-          color: #64748b;
-          cursor: pointer;
-          position: relative;
-        }
-        .badge-dot {
-          position: absolute;
-          top: 10px;
-          right: 10px;
-          width: 8px;
-          height: 8px;
-          background: #ef4444;
-          border: 2px solid white;
-          border-radius: 50%;
-        }
-
         .content-scroller {
           flex: 1;
           overflow-y: auto;
@@ -375,7 +331,6 @@ export default function DashboardLayout() {
           .sidebar-modern.closed { left: calc(-1 * var(--sidebar-width)); margin-left: 0; }
           .main-container-modern { width: 100%; }
           .mobile-close { display: block; }
-          .topbar-search { display: none; }
         }
 
         /* Utility Classes */

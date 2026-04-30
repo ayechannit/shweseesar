@@ -20,9 +20,11 @@ import ReferralDashboard from './pages/Referral/ReferralDashboard';
 import ExternalReferralDashboard from './pages/Referral/ExternalReferralDashboard';
 import ReportsPage from './pages/Reports/ReportsPage';
 import DetailedRevenueReport from './pages/Reports/DetailedRevenueReport';
+import StockBalanceReport from './pages/Reports/StockBalanceReport';
 
 import ClinicReferralTransaction from './pages/Referral/ClinicReferralTransaction';
 import VoucherSettings from './pages/MasterData/VoucherSettings';
+import TcaDashboard from './pages/Tca/TcaDashboard';
 
 function App() {
   console.log('App rendering, current location:', window.location.pathname);
@@ -32,8 +34,12 @@ function App() {
         <Route element={<DashboardLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<ExecutiveDashboard />} />
+          <Route path="/tca-dashboard" element={<TcaDashboard />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/revenue-dashboard" element={<DetailedRevenueReport />} />
           <Route path="/lab-dashboard" element={<LaboratoryDashboard />} />
           <Route path="/inventory-dashboard" element={<InventoryDashboard />} />
+          <Route path="/stock-balance-report" element={<StockBalanceReport />} />
           <Route path="/purchase-dashboard" element={<PurchaseDashboard />} />
           <Route path="/referral-dashboard" element={<ReferralDashboard />} />
           <Route path="/external-referral-dashboard" element={<ExternalReferralDashboard />} />

@@ -426,18 +426,8 @@ app.get('/api/dashboard/revenue-profit', async (req, res) => {
       db.query(`
         SELECT 
           COALESCE(SUM(vi.subtotal), 0) as lab_revenue,
-          COALESCE(SUM(
-            CASE 
-              WHEN vi.lab_cost_price > 0 THEN vi.lab_cost_price
-              ELSE vi.subtotal * (COALESCE(vi.lab_commission_pct, 0) / 100)
-            END
-          ), 0) as lab_cost,
-          COALESCE(SUM(
-            CASE 
-              WHEN vi.lab_cost_price > 0 THEN vi.subtotal - vi.lab_cost_price
-              ELSE vi.subtotal - (vi.subtotal * (COALESCE(vi.lab_commission_pct, 0) / 100))
-            END
-          ), 0) as lab_profit
+          COALESCE(SUM(vi.subtotal - (vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100)), 0) as lab_cost,
+          COALESCE(SUM(vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100), 0) as lab_profit
         FROM voucher_items vi
         JOIN vouchers v ON vi.voucher_id = v.id
         WHERE vi.item_type = 'INVESTIGATION' AND DATE(v.created_at) BETWEEN $1 AND $2
@@ -469,9 +459,7 @@ app.get('/api/dashboard/revenue-profit', async (req, res) => {
           
           COALESCE((SELECT SUM(vr.amount) FROM voucher_referrals vr JOIN vouchers v ON vr.voucher_id = v.id WHERE DATE(v.created_at) = d.date), 0) +
           COALESCE((SELECT SUM(vi.quantity * COALESCE(si.default_purchase_price, 0)) FROM voucher_items vi JOIN vouchers v ON vi.voucher_id = v.id LEFT JOIN stock_items si ON vi.item_id = si.id WHERE vi.item_type != 'INVESTIGATION' AND DATE(v.created_at) = d.date), 0) +
-          COALESCE((SELECT SUM(
-            CASE WHEN vi.lab_cost_price > 0 THEN vi.lab_cost_price ELSE vi.subtotal * (COALESCE(vi.lab_commission_pct, 0) / 100) END
-          ) FROM voucher_items vi JOIN vouchers v ON vi.voucher_id = v.id WHERE vi.item_type = 'INVESTIGATION' AND DATE(v.created_at) = d.date), 0) as total_cost
+          COALESCE((SELECT SUM(vi.subtotal - (vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100)) FROM voucher_items vi JOIN vouchers v ON vi.voucher_id = v.id WHERE vi.item_type = 'INVESTIGATION' AND DATE(v.created_at) = d.date), 0) as total_cost
           
         FROM dates d
         ORDER BY d.date ASC;
@@ -791,13 +779,8 @@ app.get('/api/dashboard/laboratory', async (req, res) => {
       db.query(`
         SELECT 
           COALESCE(SUM(vi.subtotal), 0) as lab_revenue,
-          COALESCE(SUM(vi.lab_cost_price), 0) as lab_cost,
-          COALESCE(SUM(
-            CASE 
-              WHEN vi.lab_cost_price > 0 THEN vi.subtotal - vi.lab_cost_price
-              ELSE vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100
-            END
-          ), 0) as lab_profit
+          COALESCE(SUM(vi.subtotal - (vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100)), 0) as lab_cost,
+          COALESCE(SUM(vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100), 0) as lab_profit
         FROM voucher_items vi
         JOIN vouchers v ON vi.voucher_id = v.id
         WHERE vi.item_type = 'INVESTIGATION' AND DATE(v.created_at) BETWEEN $1 AND $2
@@ -819,12 +802,7 @@ app.get('/api/dashboard/laboratory', async (req, res) => {
           l.id as laboratory_id,
           l.name as laboratory_name,
           COALESCE(SUM(vi.subtotal), 0) as revenue,
-          COALESCE(SUM(
-            CASE 
-              WHEN vi.lab_cost_price > 0 THEN vi.subtotal - vi.lab_cost_price
-              ELSE vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100
-            END
-          ), 0) as profit
+          COALESCE(SUM(vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100), 0) as profit
         FROM voucher_items vi
         JOIN vouchers v ON vi.voucher_id = v.id
         LEFT JOIN laboratories l ON vi.laboratory_id = l.id
@@ -891,17 +869,11 @@ app.get('/api/dashboard/executive', async (req, res) => {
       db.query('SELECT COUNT(id) as total_vouchers FROM vouchers WHERE DATE(created_at) BETWEEN $1 AND $2', [start, end]),
       
       db.query(`
-        SELECT COALESCE(SUM(
-          CASE 
-            WHEN vi.lab_cost_price > 0 THEN vi.subtotal - vi.lab_cost_price
-            ELSE vi.subtotal - (vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100)
-          END
-        ), 0) as lab_profit 
+        SELECT COALESCE(SUM(vi.subtotal * COALESCE(vi.lab_commission_pct, 0) / 100), 0) as lab_profit
         FROM voucher_items vi
         JOIN vouchers v ON vi.voucher_id = v.id
         WHERE vi.item_type = 'INVESTIGATION' AND DATE(v.created_at) BETWEEN $1 AND $2
       `, [start, end]),
-
       db.query("SELECT COALESCE(SUM(lab_cost_price), 0) as pending_lab_payable FROM voucher_items WHERE lab_payment_status = 'Pending'"),
       
       db.query("SELECT COALESCE(SUM(amount), 0) as pending_referral_payable FROM voucher_referrals WHERE payment_status = 'Pending'"),
@@ -959,6 +931,93 @@ app.get('/api/dashboard/executive', async (req, res) => {
   } catch (err) {
     console.error('EXECUTIVE DASHBOARD ERROR:', err);
     res.status(500).json({ error: 'Failed to fetch executive dashboard data' });
+  }
+});
+
+app.get('/api/dashboard/tca', async (req, res) => {
+  const { fromDate, toDate, physicianId, search } = req.query;
+
+  try {
+    let baseQuery = `
+      FROM vouchers v
+      JOIN patients p ON v.patient_id = p.id
+      LEFT JOIN physicians ph ON v.physician_id = ph.id
+      WHERE v.tca_date IS NOT NULL
+    `;
+    const params = [];
+
+    if (fromDate) {
+      params.push(fromDate);
+      baseQuery += ` AND v.tca_date >= $${params.length}`;
+    }
+    if (toDate) {
+      params.push(toDate);
+      baseQuery += ` AND v.tca_date <= $${params.length}`;
+    }
+    if (physicianId) {
+      params.push(physicianId);
+      baseQuery += ` AND v.physician_id = $${params.length}`;
+    }
+    if (search) {
+      params.push(`%${search}%`);
+      baseQuery += ` AND (p.name ILIKE $${params.length} OR p.patient_code ILIKE $${params.length} OR p.phone_number ILIKE $${params.length})`;
+    }
+
+    // Get Total Count based on filters (count unique patients)
+    const countRes = await db.query(`SELECT COUNT(DISTINCT v.patient_id) ${baseQuery}`, params);
+    const totalCount = parseInt(countRes.rows[0].count);
+
+    // Get Tomorrow's Count
+    const today = new Date();
+    // Use local timezone to calculate tomorrow's date string
+    const tomorrow = new Date(today.getTime() - (today.getTimezoneOffset() * 60000));
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    
+    let tomorrowQuery = `
+      SELECT COUNT(DISTINCT v.patient_id)
+      FROM vouchers v
+      WHERE v.tca_date = $1
+    `;
+    const tomorrowParams = [tomorrowStr];
+    if (physicianId) {
+      tomorrowParams.push(physicianId);
+      tomorrowQuery += ` AND v.physician_id = $2`;
+    }
+    const tomorrowCountRes = await db.query(tomorrowQuery, tomorrowParams);
+    const tomorrowCount = parseInt(tomorrowCountRes.rows[0].count);
+
+    // Get the Patients Details
+    // Using DISTINCT ON to get the latest voucher for each patient that matches the criteria
+    const patientsQuery = `
+      SELECT DISTINCT ON (v.patient_id)
+        v.patient_id,
+        p.name as patient_name,
+        p.patient_code,
+        p.phone_number,
+        ph.name as physician_name,
+        v.tca_date,
+        v.voucher_number,
+        v.created_at as voucher_date,
+        v.id as voucher_id
+      ${baseQuery}
+      ORDER BY v.patient_id, v.created_at DESC
+    `;
+
+    const patientsRes = await db.query(patientsQuery, params);
+
+    // Sort the resulting distinct patients by TCA date
+    const patients = patientsRes.rows.sort((a, b) => new Date(a.tca_date) - new Date(b.tca_date));
+
+    res.json({
+      totalCount,
+      tomorrowCount,
+      patients
+    });
+
+  } catch (err) {
+    console.error('TCA DASHBOARD ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch TCA dashboard data' });
   }
 });
 
@@ -1192,7 +1251,7 @@ app.get('/api/reports/referrals', async (req, res) => {
         SELECT rp.name, rp.organization, COUNT(vr.id) as total_referrals, SUM(vr.amount) as total_commission
         FROM voucher_referrals vr
         JOIN referred_persons rp ON vr.referred_person_id = rp.id
-        JOIN vouchers v ON vi.voucher_id = v.id
+        JOIN vouchers v ON vr.voucher_id = v.id
         WHERE v.created_at >= $1 AND v.created_at <= $2
         GROUP BY rp.id, rp.name, rp.organization
         ORDER BY total_commission DESC`, [start, end]),
@@ -2314,12 +2373,12 @@ const deductStock = async (client, itemId, quantityToDeduct, reason) => {
   // 1. Check total stock
   const stockRes = await client.query('SELECT SUM(quantity) as total FROM stock_batches WHERE item_id = $1', [itemId]);
   const totalAvailable = parseInt(stockRes.rows[0].total) || 0;
+  
   if (totalAvailable < quantityToDeduct) {
-    console.warn(`[WARNING] Insufficient stock for item ID ${itemId}. Requested: ${quantityToDeduct}, Available: ${totalAvailable}. Bypassing check for testing.`);
-    return; // Bypass the check and return early instead of throwing an error
+    console.warn(`[WARNING] Insufficient stock for item ID ${itemId}. Requested: ${quantityToDeduct}, Available: ${totalAvailable}. Proceeding to oversell.`);
   }
 
-  // 2. FEFO: Get batches ordered by expiry date
+  // 2. FEFO: Get batches ordered by expiry date that have positive quantity
   const batchesRes = await client.query(
     'SELECT * FROM stock_batches WHERE item_id = $1 AND quantity > 0 ORDER BY expiry_date ASC NULLS LAST',
     [itemId]
@@ -2327,6 +2386,7 @@ const deductStock = async (client, itemId, quantityToDeduct, reason) => {
 
   let remainingToDeduct = parseInt(quantityToDeduct);
 
+  // Deduct from available batches
   for (const batch of batchesRes.rows) {
     if (remainingToDeduct <= 0) break;
 
@@ -2340,6 +2400,23 @@ const deductStock = async (client, itemId, quantityToDeduct, reason) => {
     );
 
     remainingToDeduct -= takeFromThisBatch;
+  }
+
+  // 3. Handle oversold quantity
+  if (remainingToDeduct > 0) {
+    // Create or update a dummy batch for oversold items to keep track of negative stock
+    const overSRes = await client.query(`
+      INSERT INTO stock_batches (item_id, batch_number, quantity, purchase_price, sale_price)
+      VALUES ($1, 'OVERSOLD', -$2, (SELECT default_purchase_price FROM stock_items WHERE id = $1), (SELECT default_sale_price FROM stock_items WHERE id = $1))
+      RETURNING id
+    `, [itemId, remainingToDeduct]);
+
+    const oversoldBatchId = overSRes.rows[0].id;
+
+    await client.query(
+      'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
+      [itemId, oversoldBatchId, 'OUT', -remainingToDeduct, reason]
+    );
   }
 };
 
@@ -2657,7 +2734,7 @@ app.post('/api/billing/vouchers', async (req, res) => {
   const { 
     patient_id, physician_id, items, referrals, 
     total_amount, discount_amount, net_amount, 
-    payment_method, notes 
+    payment_method, notes, tca_date 
   } = req.body;
 
   // Generate Voucher Number: VOU-YYMMDD-RAND
@@ -2672,10 +2749,10 @@ app.post('/api/billing/vouchers', async (req, res) => {
 
     // 1. Insert Voucher
     const vRes = await client.query(`
-      INSERT INTO vouchers (voucher_number, patient_id, physician_id, total_amount, discount_amount, net_amount, payment_method, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO vouchers (voucher_number, patient_id, physician_id, total_amount, discount_amount, net_amount, payment_method, notes, tca_date)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id
-    `, [voucher_number, patient_id, physician_id || null, total_amount, discount_amount, net_amount, payment_method, notes]);
+    `, [voucher_number, patient_id, physician_id || null, total_amount, discount_amount, net_amount, payment_method, notes, tca_date || null]);
     const voucherId = vRes.rows[0].id;
 
     // 2. Insert Items & Deduct Stock
@@ -3024,6 +3101,153 @@ app.get('/api/reports/detailed-revenue', async (req, res) => {
   } catch (err) {
     console.error('DETAILED REVENUE API ERROR:', err);
     res.status(500).json({ error: 'Failed to fetch financial data' });
+  }
+});
+
+// --- Patient Clinical Notes Routes ---
+
+// GET: All clinical notes for a patient
+app.get('/api/patients/:id/clinical-notes', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query(`
+      SELECT * FROM patient_clinical_notes 
+      WHERE patient_id = $1 
+      ORDER BY record_date DESC, created_at DESC
+    `, [id]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('FETCH CLINICAL NOTES ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch clinical notes' });
+  }
+});
+
+// POST: Add a new clinical note for a patient
+app.post('/api/patients/:id/clinical-notes', async (req, res) => {
+  const { id } = req.params;
+  const { record_date, diagnosis, treatment, ongoing_plan } = req.body;
+  
+  try {
+    const query = `
+      INSERT INTO patient_clinical_notes (patient_id, record_date, diagnosis, treatment, ongoing_plan)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *;
+    `;
+    const result = await db.query(query, [
+      id, 
+      record_date || new Date().toISOString().split('T')[0], 
+      diagnosis, 
+      treatment, 
+      ongoing_plan
+    ]);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('CREATE CLINICAL NOTE ERROR:', err);
+    res.status(500).json({ error: 'Failed to create clinical note' });
+  }
+});
+
+// PUT: Update a clinical note
+app.put('/api/patients/clinical-notes/:id', async (req, res) => {
+  const { id } = req.params;
+  const { record_date, diagnosis, treatment, ongoing_plan } = req.body;
+  try {
+    const query = `
+      UPDATE patient_clinical_notes 
+      SET record_date = $1, diagnosis = $2, treatment = $3, ongoing_plan = $4, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $5
+      RETURNING *;
+    `;
+    const result = await db.query(query, [record_date, diagnosis, treatment, ongoing_plan, id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Note not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('UPDATE CLINICAL NOTE ERROR:', err);
+    res.status(500).json({ error: 'Failed to update clinical note' });
+  }
+});
+
+// DELETE: Remove a clinical note
+app.delete('/api/patients/clinical-notes/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM patient_clinical_notes WHERE id = $1 RETURNING id', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Note not found' });
+    res.json({ message: 'Note deleted successfully' });
+  } catch (err) {
+    console.error('DELETE CLINICAL NOTE ERROR:', err);
+    res.status(500).json({ error: 'Failed to delete clinical note' });
+  }
+});
+
+// --- Notifications API ---
+
+app.get('/api/notifications/alerts', async (req, res) => {
+  try {
+    const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = new Date();
+    const tomorrow = new Date(today.getTime() - (today.getTimezoneOffset() * 60000));
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+    const [lowStock, expiringSoon, tomorrowTca] = await Promise.all([
+      // 1. Low Stock
+      db.query(`
+        SELECT COUNT(*) as count
+        FROM stock_items si
+        LEFT JOIN (SELECT item_id, SUM(quantity) as qty FROM stock_batches GROUP BY item_id) sb ON si.id = sb.item_id
+        WHERE si.is_active = true AND COALESCE(sb.qty, 0) <= si.min_stock_level
+      `),
+      // 2. Expiring Soon
+      db.query(`
+        SELECT COUNT(*) as count
+        FROM stock_batches
+        WHERE expiry_date <= $1 AND quantity > 0
+      `, [thirtyDaysFromNow]),
+      // 3. Tomorrow's TCA
+      db.query(`
+        SELECT COUNT(DISTINCT patient_id) as count
+        FROM vouchers
+        WHERE tca_date = $1
+      `, [tomorrowStr])
+    ]);
+
+    const alerts = [];
+    
+    if (parseInt(lowStock.rows[0].count) > 0) {
+      alerts.push({
+        id: 'low-stock',
+        type: 'warning',
+        title: 'Low Stock Alert',
+        message: `${lowStock.rows[0].count} items are at or below minimum stock level.`,
+        link: '/inventory-dashboard'
+      });
+    }
+
+    if (parseInt(expiringSoon.rows[0].count) > 0) {
+      alerts.push({
+        id: 'expiry',
+        type: 'danger',
+        title: 'Expiry Warning',
+        message: `${expiringSoon.rows[0].count} batches are expiring within 30 days.`,
+        link: '/inventory-dashboard'
+      });
+    }
+
+    if (parseInt(tomorrowTca.rows[0].count) > 0) {
+      alerts.push({
+        id: 'tca-tomorrow',
+        type: 'info',
+        title: "Tomorrow's TCA",
+        message: `${tomorrowTca.rows[0].count} patients are scheduled to return tomorrow.`,
+        link: '/tca-dashboard'
+      });
+    }
+
+    res.json(alerts);
+  } catch (err) {
+    console.error('NOTIFICATIONS ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
   }
 });
 
