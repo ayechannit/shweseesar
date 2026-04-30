@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, Plus, Eye, X, AlertTriangle } from 'lucide-react';
+import { Truck, Plus, Eye, X, AlertTriangle, ShoppingBag, Search } from 'lucide-react';
 
 const API_BASE = 'http://localhost:5000/api';
 
@@ -32,6 +32,12 @@ export default function PurchaseManagement() {
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [notes, setNotes] = useState('');
   const [paidAmount, setPaidAmount] = useState(0);
+  
+  // Searchable Dropdown State
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [isSupplierDropdownOpen, setIsSupplierDropdownOpen] = useState(false);
+  const [itemSearch, setItemSearch] = useState('');
+  const [isItemDropdownOpen, setIsItemDropdownOpen] = useState(false);
   
   // Item entry
   const [items, setItems] = useState([]);
@@ -135,8 +141,32 @@ export default function PurchaseManagement() {
       alert("Please fill item details correctly.");
       return;
     }
+
     const itemData = stockItems.find(i => String(i.id) === String(currentItem.item_id));
-    setItems([...items, { ...currentItem, item_name: itemData?.name, unit: itemData?.unit }]);
+    
+    // Check if item already exists in the list (matching item_id, batch_number, and purchase_price)
+    const existingItemIndex = items.findIndex(item => 
+      item.item_id === currentItem.item_id && 
+      (item.batch_number || '') === (currentItem.batch_number || '') &&
+      item.purchase_price === currentItem.purchase_price
+    );
+
+    if (existingItemIndex >= 0) {
+      // Update existing item
+      const updatedItems = [...items];
+      const existingItem = updatedItems[existingItemIndex];
+      const newQuantity = existingItem.quantity + currentItem.quantity;
+      
+      updatedItems[existingItemIndex] = {
+        ...existingItem,
+        quantity: newQuantity,
+        subtotal: newQuantity * existingItem.purchase_price
+      };
+      setItems(updatedItems);
+    } else {
+      // Add new item
+      setItems([...items, { ...currentItem, item_name: itemData?.name, unit: itemData?.unit }]);
+    }
     
     // Reset
     setCurrentItem({
@@ -148,11 +178,33 @@ export default function PurchaseManagement() {
       sale_price: 0,
       subtotal: 0
     });
+    setItemSearch(''); // Clear the search input
   };
 
   const removeItem = (index) => {
     const newItems = [...items];
     newItems.splice(index, 1);
+    setItems(newItems);
+    setItemSearch(''); // Optional: clear search if they remove an item to start fresh
+  };
+
+  const updateItemQuantity = (index, newQuantity) => {
+    const qty = parseInt(newQuantity) || 0;
+    const newItems = [...items];
+    const item = newItems[index];
+    
+    if (qty <= 0) {
+      // Option A: Could remove the item if qty goes to 0
+      // removeItem(index);
+      // Option B: Just don't allow it to go below 1
+      return; 
+    }
+
+    newItems[index] = {
+      ...item,
+      quantity: qty,
+      subtotal: qty * item.purchase_price
+    };
     setItems(newItems);
   };
 
@@ -300,138 +352,324 @@ export default function PurchaseManagement() {
 
       {/* New Purchase Modal */}
       {isEntryOpen && (
-        <div className="modal-overlay" style={{ alignItems: 'flex-start', paddingTop: '2rem' }}>
-          <div className="modal" style={{ maxWidth: '900px', width: '95%' }}>
-            <div className="modal-header">
-              <h2 className="modal-title">New Purchase Entry</h2>
-              <button className="close-btn" onClick={() => setIsEntryOpen(false)}><X size={24} /></button>
+        <div className="modal-overlay" style={{ alignItems: 'flex-start', paddingTop: '3rem', backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', zIndex: 9999 }}>
+          <div className="modal" style={{ maxWidth: '1200px', width: '95%', borderRadius: '1.25rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0', padding: 0, overflow: 'hidden' }}>
+            <div className="modal-header" style={{ backgroundColor: '#f8fafc', padding: '1.5rem 2rem', borderBottom: '1px solid #e2e8f0' }}>
+              <h2 className="modal-title" style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <ShoppingBag size={20} color="#4f46e5" /> New Purchase Entry
+              </h2>
+              <button className="close-btn" onClick={() => setIsEntryOpen(false)} style={{ background: '#f1f5f9', border: 'none', padding: '0.5rem', borderRadius: '50%', color: '#64748b', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => Object.assign(e.currentTarget.style, { background: '#e2e8f0', color: '#0f172a' })} onMouseOut={e => Object.assign(e.currentTarget.style, { background: '#f1f5f9', color: '#64748b' })}>
+                <X size={20} />
+              </button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem', padding: '1.5rem', maxHeight: '80vh', overflowY: 'auto' }}>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem', padding: '2rem', maxHeight: '75vh', overflowY: 'auto', backgroundColor: '#ffffff' }}>
               
               {/* Left Side: Items & Details */}
-              <div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Supplier</label>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <select className="form-control" value={supplierId} onChange={e => setSupplierId(e.target.value)} required style={{ flex: 1 }}>
-                        <option value="">-- Select Supplier --</option>
-                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}
-                      </select>
-                      <button type="button" className="btn btn-outline" onClick={() => setIsSupplierModalOpen(true)} title="Add New Supplier" style={{ padding: '0 0.75rem' }}>
-                        <Plus size={16} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 700, color: '#475569' }}>Supplier</label>
+                    <div style={{ display: 'flex', gap: '0.5rem', position: 'relative' }}>
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <input 
+                          type="text"
+                          placeholder="Search Supplier..."
+                          value={supplierSearch}
+                          onChange={(e) => {
+                            setSupplierSearch(e.target.value);
+                            setIsSupplierDropdownOpen(true);
+                            setSupplierId(''); // clear ID if typing
+                          }}
+                          onFocus={() => setIsSupplierDropdownOpen(true)}
+                          onBlur={() => setTimeout(() => setIsSupplierDropdownOpen(false), 200)}
+                          style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b', outline: 'none' }}
+                        />
+                        {isSupplierDropdownOpen && (
+                          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: '0.5rem', maxHeight: '200px', overflowY: 'auto', zIndex: 10 }}>
+                            {suppliers.filter(s => s.company_name.toLowerCase().includes(supplierSearch.toLowerCase())).length === 0 ? (
+                              <div style={{ padding: '0.75rem', color: '#64748b', fontSize: '0.875rem' }}>No matches found.</div>
+                            ) : (
+                              suppliers.filter(s => s.company_name.toLowerCase().includes(supplierSearch.toLowerCase())).map(s => (
+                                <div 
+                                  key={s.id} 
+                                  onClick={() => {
+                                    setSupplierId(s.id);
+                                    setSupplierSearch(s.company_name);
+                                    setIsSupplierDropdownOpen(false);
+                                  }}
+                                  style={{ padding: '0.75rem', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontSize: '0.875rem' }}
+                                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                                >
+                                  {s.company_name}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => setIsSupplierModalOpen(true)} 
+                        title="Add New Supplier" 
+                        style={{ padding: '0 0.875rem', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '0.5rem', color: '#4f46e5', cursor: 'pointer', transition: 'all 0.2s' }}
+                        onMouseOver={e => Object.assign(e.currentTarget.style, { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' })}
+                        onMouseOut={e => Object.assign(e.currentTarget.style, { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' })}
+                      >
+                        <Plus size={18} />
                       </button>
                     </div>
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Notes</label>
-                    <input type="text" className="form-control" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional details..." />
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 700, color: '#475569' }}>Invoice Notes</label>
+                    <input 
+                      type="text" 
+                      value={notes} 
+                      onChange={e => setNotes(e.target.value)} 
+                      placeholder="Optional details or references..." 
+                      style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b', outline: 'none' }}
+                    />
                   </div>
                 </div>
 
-                <div className="card" style={{ padding: '1rem', marginBottom: '1rem', background: '#f8fafc', boxShadow: 'none', border: '1px solid #e2e8f0' }}>
-                  <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#1e293b' }}>Add Item</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                    <div>
-                      <label className="form-label" style={{ fontSize: '0.75rem' }}>Item</label>
-                      <select className="form-control" value={currentItem.item_id} onChange={e => handleItemSelect(e.target.value)}>
-                        <option value="">Select Item...</option>
-                        {stockItems.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="form-label" style={{ fontSize: '0.75rem' }}>Batch No. (Optional)</label>
-                      <input type="text" className="form-control" value={currentItem.batch_number} onChange={e => setCurrentItem({...currentItem, batch_number: e.target.value})} />
-                    </div>
-                    <div>
-                      <label className="form-label" style={{ fontSize: '0.75rem' }}>Expiry Date</label>
-                      <input type="date" className="form-control" value={currentItem.expiry_date} onChange={e => setCurrentItem({...currentItem, expiry_date: e.target.value})} />
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end' }}>
-                    <div>
-                      <label className="form-label" style={{ fontSize: '0.75rem' }}>Quantity</label>
-                      <input type="number" min="1" className="form-control" value={currentItem.quantity} onChange={e => handleQuantityChange(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="form-label" style={{ fontSize: '0.75rem' }}>Purchase Price</label>
-                      <input type="number" step="0.01" className="form-control" value={currentItem.purchase_price} onChange={e => handlePurchasePriceChange(e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="form-label" style={{ fontSize: '0.75rem' }}>Subtotal</label>
-                      <input type="text" className="form-control" value={currentItem.subtotal.toFixed(2)} readOnly style={{ background: '#e2e8f0' }} />
-                    </div>
-                    <button type="button" className="btn btn-primary" onClick={addItemToPurchase}>Add</button>
-                  </div>
-                </div>
-
-                <div className="table-responsive" style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '0.375rem' }}>
-                  <table style={{ margin: 0 }}>
-                    <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
-                      <tr>
-                        <th>Item</th>
-                        <th>Batch</th>
-                        <th>Qty</th>
-                        <th>Price</th>
-                        <th>Subtotal</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.length === 0 ? (
-                        <tr><td colSpan={6} style={{ textAlign: 'center', padding: '1rem' }}>No items added</td></tr>
-                      ) : (
-                        items.map((item, idx) => (
-                          <tr key={idx}>
-                            <td>{item.item_name}</td>
-                            <td>{item.batch_number || '-'}</td>
-                            <td>{item.quantity}</td>
-                            <td>{item.purchase_price}</td>
-                            <td>{item.subtotal}</td>
-                            <td>
-                              <button type="button" style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => removeItem(idx)}><X size={16} /></button>
-                            </td>
-                          </tr>
-                        ))
+                <div style={{ backgroundColor: '#f8fafc', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #e2e8f0' }}>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: '0 0 1rem 0', color: '#0f172a' }}>Add Stock Item</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                    <div style={{ position: 'relative' }}>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Item</label>
+                      <input 
+                        type="text"
+                        placeholder="Search Item..."
+                        value={itemSearch}
+                        onChange={(e) => {
+                          setItemSearch(e.target.value);
+                          setIsItemDropdownOpen(true);
+                          if(currentItem.item_id) {
+                            setCurrentItem({ ...currentItem, item_id: '', purchase_price: 0, subtotal: 0 });
+                          }
+                        }}
+                        onFocus={() => setIsItemDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setIsItemDropdownOpen(false), 200)}
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.875rem', outline: 'none' }}
+                      />
+                      {isItemDropdownOpen && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: '0.5rem', maxHeight: '200px', overflowY: 'auto', zIndex: 10 }}>
+                          {stockItems.filter(i => i.name.toLowerCase().includes(itemSearch.toLowerCase())).length === 0 ? (
+                            <div style={{ padding: '0.6rem', color: '#64748b', fontSize: '0.875rem' }}>No matches found.</div>
+                          ) : (
+                            stockItems.filter(i => i.name.toLowerCase().includes(itemSearch.toLowerCase())).map(i => (
+                              <div 
+                                key={i.id} 
+                                onClick={() => {
+                                  handleItemSelect(i.id);
+                                  setItemSearch(`${i.name} (${i.unit})`);
+                                  setIsItemDropdownOpen(false);
+                                }}
+                                style={{ padding: '0.6rem', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontSize: '0.875rem' }}
+                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                              >
+                                {i.name} ({i.unit})
+                              </div>
+                            ))
+                          )}
+                        </div>
                       )}
-                    </tbody>
-                  </table>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Batch No. (Optional)</label>
+                      <input 
+                        type="text" 
+                        value={currentItem.batch_number} 
+                        onChange={e => setCurrentItem({...currentItem, batch_number: e.target.value})} 
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.875rem', outline: 'none' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Expiry Date</label>
+                      <input 
+                        type="date" 
+                        value={currentItem.expiry_date} 
+                        onChange={e => setCurrentItem({...currentItem, expiry_date: e.target.value})} 
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.875rem', outline: 'none' }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '1rem', alignItems: 'end' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Quantity</label>
+                      <input 
+                        type="number" 
+                        min="1" 
+                        value={currentItem.quantity} 
+                        onChange={e => handleQuantityChange(e.target.value)} 
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.875rem', outline: 'none' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Unit Price</label>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        value={currentItem.purchase_price} 
+                        onChange={e => handlePurchasePriceChange(e.target.value)} 
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.875rem', outline: 'none' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Subtotal</label>
+                      <input 
+                        type="text" 
+                        value={currentItem.subtotal.toFixed(2)} 
+                        readOnly 
+                        style={{ width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: '1px solid #e2e8f0', backgroundColor: '#f1f5f9', color: '#94a3b8', fontSize: '0.875rem', outline: 'none', fontWeight: 600 }} 
+                      />
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={addItemToPurchase}
+                      style={{ padding: '0.6rem 1.5rem', backgroundColor: '#4f46e5', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                      onMouseOver={e => Object.assign(e.currentTarget.style, { backgroundColor: '#4338ca' })}
+                      onMouseOut={e => Object.assign(e.currentTarget.style, { backgroundColor: '#4f46e5' })}
+                    >
+                      <Plus size={16} /> Add
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ flex: 1, minHeight: '200px', border: '1px solid #e2e8f0', borderRadius: '0.75rem', overflow: 'hidden' }}>
+                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', margin: 0 }}>
+                      <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8fafc', zIndex: 1, borderBottom: '1px solid #e2e8f0' }}>
+                        <tr>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Item</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Batch</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', textAlign: 'right' }}>Qty</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', textAlign: 'right' }}>Price</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', textAlign: 'right' }}>Subtotal</th>
+                          <th style={{ padding: '0.75rem 1rem' }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.length === 0 ? (
+                          <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8', fontSize: '0.875rem' }}>No items added to invoice yet.</td></tr>
+                        ) : (
+                          items.map((item, idx) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', fontWeight: 600, color: '#1e293b' }}>{item.item_name}</td>
+                              <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', color: '#64748b' }}>{item.batch_number || '-'}</td>
+                              <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', fontWeight: 600, color: '#1e293b', textAlign: 'right' }}>
+                                <input 
+                                  type="number" 
+                                  value={item.quantity} 
+                                  min="1"
+                                  onChange={(e) => updateItemQuantity(idx, e.target.value)}
+                                  style={{ 
+                                    width: '60px', 
+                                    padding: '0.25rem 0.5rem', 
+                                    textAlign: 'right', 
+                                    borderRadius: '0.25rem', 
+                                    border: '1px solid #cbd5e1',
+                                    outline: 'none'
+                                  }}
+                                />
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', color: '#64748b', textAlign: 'right' }}>{item.purchase_price.toLocaleString()}</td>
+                              <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', fontWeight: 700, color: '#059669', textAlign: 'right' }}>{item.subtotal.toLocaleString()}</td>
+                              <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                                <button 
+                                  type="button" 
+                                  style={{ color: '#ef4444', background: '#fef2f2', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '0.25rem', display: 'inline-flex' }} 
+                                  onClick={() => removeItem(idx)}
+                                >
+                                  <X size={14} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 
               {/* Right Side: Summary & Payment */}
-              <div style={{ background: '#f8fafc', padding: '1.5rem', borderRadius: '0.5rem', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1.5rem', color: '#1e293b' }}>Summary</h3>
+              <div style={{ backgroundColor: '#f8fafc', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 800, margin: 0, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Summary & Payment</h3>
                 
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', fontSize: '1.125rem', fontWeight: 600 }}>
-                  <span>Total Amount:</span>
-                  <span>{totalAmount.toLocaleString()}</span>
+                <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Total Items:</span>
+                    <span style={{ fontWeight: 800, color: '#1e293b' }}>{items.length}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1.25rem' }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Total Amount:</span>
+                    <span style={{ fontWeight: 900, color: '#0f172a' }}>{totalAmount.toLocaleString()} <span style={{ fontSize: '0.875rem', color: '#94a3b8' }}>MMK</span></span>
+                  </div>
                 </div>
 
-                <hr style={{ border: 'none', borderTop: '1px solid #cbd5e1', margin: '1rem 0' }} />
+                <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+                  <div className="form-group" style={{ margin: '0 0 1rem 0' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 700, color: '#475569' }}>Payment Method</label>
+                    <select 
+                      value={paymentMethod} 
+                      onChange={e => setPaymentMethod(e.target.value)}
+                      style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b', outline: 'none', backgroundColor: '#f8fafc' }}
+                    >
+                      <option>Cash</option>
+                      <option>Bank Transfer</option>
+                      <option>Credit</option>
+                    </select>
+                  </div>
 
-                <div className="form-group">
-                  <label className="form-label">Payment Method</label>
-                  <select className="form-control" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-                    <option>Cash</option>
-                    <option>Bank Transfer</option>
-                    <option>Credit</option>
-                  </select>
+                  <div className="form-group" style={{ margin: '0 0 1rem 0' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 700, color: '#475569' }}>Amount Paid</label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontWeight: 700 }}>MMK</span>
+                      <input 
+                        type="number" 
+                        value={paidAmount} 
+                        onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} 
+                        style={{ width: '100%', padding: '1rem 1rem 1rem 3.5rem', borderRadius: '0.5rem', border: '2px solid #cbd5e1', fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', outline: 'none', transition: 'border-color 0.2s' }}
+                        onFocus={e => e.target.style.borderColor = '#4f46e5'}
+                        onBlur={e => e.target.style.borderColor = '#cbd5e1'}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #f1f5f9' }}>
+                    <span style={{ color: '#64748b', fontWeight: 700, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Balance Due</span>
+                    <span style={{ fontWeight: 900, fontSize: '1.5rem', color: balanceAmount > 0 ? '#ef4444' : '#10b981' }}>
+                      {balanceAmount.toLocaleString()}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Paid Amount</label>
-                  <input type="number" className="form-control" style={{ fontSize: '1.25rem', fontWeight: 600, padding: '0.75rem' }} value={paidAmount} onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} />
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', fontSize: '1.125rem', fontWeight: 600, color: balanceAmount > 0 ? '#ef4444' : '#10b981' }}>
-                  <span>Balance Due:</span>
-                  <span>{balanceAmount.toLocaleString()}</span>
-                </div>
-
-                <div style={{ marginTop: '2rem' }}>
-                  <button type="button" className="btn btn-primary" style={{ width: '100%', padding: '0.75rem', fontSize: '1rem' }} onClick={handleSubmit}>
-                    Save Purchase Entry
+                <div style={{ marginTop: 'auto' }}>
+                  <button 
+                    type="button" 
+                    onClick={handleSubmit}
+                    style={{ 
+                      width: '100%', padding: '1rem', backgroundColor: '#10b981', color: 'white', border: 'none', 
+                      borderRadius: '0.75rem', fontSize: '1.125rem', fontWeight: 800, cursor: 'pointer', 
+                      boxShadow: '0 10px 15px -3px rgba(16, 185, 129, 0.3)', transition: 'all 0.2s',
+                      display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem'
+                    }}
+                    onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 15px 20px -5px rgba(16, 185, 129, 0.4)'; }}
+                    onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(16, 185, 129, 0.3)'; }}
+                  >
+                    Confirm Purchase
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setIsEntryOpen(false)}
+                    style={{ width: '100%', padding: '1rem', backgroundColor: 'transparent', color: '#64748b', border: 'none', fontWeight: 700, cursor: 'pointer', marginTop: '0.5rem', transition: 'color 0.2s' }}
+                    onMouseOver={e => e.currentTarget.style.color = '#0f172a'}
+                    onMouseOut={e => e.currentTarget.style.color = '#64748b'}
+                  >
+                    Cancel
                   </button>
                 </div>
               </div>

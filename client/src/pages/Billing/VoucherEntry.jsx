@@ -99,19 +99,41 @@ export default function VoucherEntry({ onSave, onCancel }) {
       categoryName.includes('lab') || categoryName.includes('test') || categoryName.includes('investigation') ||
       subcatName.includes('lab') || subcatName.includes('test') || subcatName.includes('investigation')
     );
+    
+    const determinedType = isPackage ? 'PACKAGE' : (isLab ? 'INVESTIGATION' : 'PHARMACY');
 
-    const newItem = {
-      item_type: isPackage ? 'PACKAGE' : (isLab ? 'INVESTIGATION' : 'PHARMACY'),
-      item_id: itemId,
-      name: name,
-      quantity: 1,
-      unit_price: parseFloat(price) || 0,
-      subtotal: parseFloat(price) || 0,
-      laboratory_id: null,
-      is_lab: isLab // Helper for UI
-    };
+    // Check if the item is already in the list
+    const existingItemIndex = selectedItems.findIndex(i => 
+      i.item_id === itemId && i.item_type === determinedType
+    );
 
-    setSelectedItems([...selectedItems, newItem]);
+    if (existingItemIndex >= 0) {
+      // Item exists, increment quantity
+      const updatedItems = [...selectedItems];
+      const existingItem = updatedItems[existingItemIndex];
+      const newQuantity = existingItem.quantity + 1;
+      
+      updatedItems[existingItemIndex] = {
+        ...existingItem,
+        quantity: newQuantity,
+        subtotal: newQuantity * existingItem.unit_price
+      };
+      setSelectedItems(updatedItems);
+    } else {
+      // Item is new, add it
+      const newItem = {
+        item_type: determinedType,
+        item_id: itemId,
+        name: name,
+        quantity: 1,
+        unit_price: parseFloat(price) || 0,
+        subtotal: parseFloat(price) || 0,
+        laboratory_id: null,
+        is_lab: isLab // Helper for UI
+      };
+      setSelectedItems([...selectedItems, newItem]);
+    }
+
     setItemSearch('');
     setShowItemResults(false);
   };
@@ -185,6 +207,13 @@ export default function VoucherEntry({ onSave, onCancel }) {
     e.preventDefault();
     if (!selectedPatient) return alert('Please select a patient');
     if (selectedItems.length === 0) return alert('Please add at least one item');
+
+    // Check for missing laboratories in investigations
+    const missingLab = selectedItems.find(i => i.item_type === 'INVESTIGATION' && !i.laboratory_id);
+    if (missingLab) {
+      alert(`Please select a laboratory for "${missingLab.name}".`);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -415,9 +444,18 @@ export default function VoucherEntry({ onSave, onCancel }) {
                         </div>
                         {item.item_type === 'INVESTIGATION' && (
                           <div style={{ marginTop: '0.75rem' }}>
-                            <div style={{ fontSize: '10px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px' }}>Send to Laboratory:</div>
+                            <div style={{ fontSize: '10px', fontWeight: 800, color: item.laboratory_id ? '#94a3b8' : '#ef4444', textTransform: 'uppercase', marginBottom: '4px' }}>
+                              Send to Laboratory: {!item.laboratory_id && <span style={{ color: '#ef4444' }}>(REQUIRED)</span>}
+                            </div>
                             <select 
-                              className="form-control" style={{ height: '32px', padding: '0 0.5rem', fontSize: '0.75rem', border: '1px dashed #cbd5e1' }}
+                              className="form-control" 
+                              style={{ 
+                                height: '32px', 
+                                padding: '0 0.5rem', 
+                                fontSize: '0.75rem', 
+                                border: item.laboratory_id ? '1px dashed #cbd5e1' : '2px solid #fca5a5',
+                                backgroundColor: item.laboratory_id ? 'white' : '#fff1f2'
+                              }}
                               value={item.laboratory_id || ''}
                               onChange={(e) => updateItem(idx, 'laboratory_id', e.target.value)}
                             >
