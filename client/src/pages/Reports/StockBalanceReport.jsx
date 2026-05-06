@@ -28,11 +28,15 @@ export default function StockBalanceReport() {
     }
   };
 
-  const filteredItems = items.filter(item => 
-    (item.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (item.item_code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (item.category_name || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredItems = items.filter(item => {
+    const isPharmacy = (item.category_name || '').toLowerCase() === 'pharmacy';
+    const matchesSearch = 
+      (item.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.item_code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.category_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+    
+    return isPharmacy && matchesSearch;
+  });
 
   const totalValuation = filteredItems.reduce((sum, item) => {
     return sum + (parseInt(item.total_quantity || 0) * parseFloat(item.default_purchase_price || 0));

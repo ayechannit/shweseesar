@@ -2407,9 +2407,9 @@ const deductStock = async (client, itemId, quantityToDeduct, reason) => {
     // Create or update a dummy batch for oversold items to keep track of negative stock
     const overSRes = await client.query(`
       INSERT INTO stock_batches (item_id, batch_number, quantity, purchase_price, sale_price)
-      VALUES ($1, 'OVERSOLD', -$2, (SELECT default_purchase_price FROM stock_items WHERE id = $1), (SELECT default_sale_price FROM stock_items WHERE id = $1))
+      VALUES ($1, 'OVERSOLD', $2, (SELECT default_purchase_price FROM stock_items WHERE id = $1), (SELECT default_sale_price FROM stock_items WHERE id = $1))
       RETURNING id
-    `, [itemId, remainingToDeduct]);
+    `, [itemId, -remainingToDeduct]);
 
     const oversoldBatchId = overSRes.rows[0].id;
 
