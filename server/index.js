@@ -1707,7 +1707,6 @@ app.delete('/api/appointments/:id', async (req, res) => {
 
 // List all stock items with current aggregate quantity
 app.get('/api/stock/items', async (req, res) => {
-  fs.appendFileSync('hit.log', `GET /api/stock/items hit at ${new Date().toISOString()}\n`);
   const { subcategory_id, category_id } = req.query; 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
