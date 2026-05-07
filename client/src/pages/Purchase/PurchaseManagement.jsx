@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Truck, Plus, Eye, X, AlertTriangle, ShoppingBag, Search } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function PurchaseManagement() {
   const [purchases, setPurchases] = useState([]);

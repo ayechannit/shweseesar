@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, X, ChevronLeft, ChevronRight, Search, Filter } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function ClinicReferralTransaction() {
   const [transactions, setTransactions] = useState([]);

@@ -7,8 +7,7 @@ import {
   ClipboardList, Database, ChevronLeft, ChevronRight, Info
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
-const UPLOAD_BASE = 'http://localhost:5000/uploads';
+import { API_BASE, UPLOAD_BASE } from '../../config';
 
 const Notification = ({ message, type, onClose }) => {
   useEffect(() => {

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, User, Search, Filter, FileText } from 'lucide-react';
 import PatientClinicalModal from '../../components/Modals/PatientClinicalModal';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function TcaDashboard() {
   const [patients, setPatients] = useState([]);

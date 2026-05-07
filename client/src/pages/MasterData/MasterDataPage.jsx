@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { masterDataConfig } from '../../config/masterDataConfig';
 
-const API_BASE = 'http://localhost:5000/api/master-data';
+import { API_BASE as RAW_API_BASE } from '../../config';
+const API_BASE = `${RAW_API_BASE}/master-data`;
 
 export default function MasterDataPage({ type }) {
   const [data, setData] = useState([]);

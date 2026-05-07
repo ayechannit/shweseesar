@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Search, Download, Printer, Filter } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function StockBalanceReport() {
   const [items, setItems] = useState([]);

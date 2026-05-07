@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Search, UserPlus, Clock, X, Check, Search as SearchIcon, Plus } from 'lucide-react';
 import AddPatientModal from '../../components/Modals/AddPatientModal';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function ReceptionDashboard() {
   const [activeTab, setActiveTab] = useState('appointments'); // 'appointments' or 'search'

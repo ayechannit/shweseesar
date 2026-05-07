@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Download, Upload, Edit2, Save, X, Search, Filter, ArrowUpDown, ChevronDown, CheckCircle2, AlertCircle, Plus, FileSpreadsheet } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function PricingManagement() {
   const [items, setItems] = useState([]);

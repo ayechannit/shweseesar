@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Search, FileText, Calendar, User, DollarSign, Eye, Printer, Filter, X } from 'lucide-react';
 import VoucherEntry from './VoucherEntry';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function BillingPage() {
   const [view, setView] = useState('list'); // 'list' or 'create'

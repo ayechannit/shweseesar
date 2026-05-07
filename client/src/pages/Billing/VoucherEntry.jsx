@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Trash2, Save, X, User, Package, Monitor, UserPlus, Calculator, Receipt, CreditCard, ChevronRight, AlertCircle, Calendar } from 'lucide-react';
 import AddPatientModal from '../../components/Modals/AddPatientModal';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function VoucherEntry({ onSave, onCancel }) {
   // --- Master Data ---

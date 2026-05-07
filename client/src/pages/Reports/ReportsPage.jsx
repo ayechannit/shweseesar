@@ -7,7 +7,7 @@ import {
   CheckCircle, XCircle, MoreVertical, Layout, Truck, Printer
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState('revenue');

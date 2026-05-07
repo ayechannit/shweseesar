@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, CheckCircle, Clock, Calendar, User, DollarSign, FileText } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function ReferralPaymentManagement() {
   const [referrals, setReferrals] = useState([]);

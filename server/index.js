@@ -10,9 +10,14 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+const uploadDir = process.env.VERCEL ? '/tmp' : path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/')
+    cb(null, uploadDir)
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
@@ -24,7 +29,7 @@ const upload = multer({ storage: storage });
 
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(uploadDir));
 
 // Allowed master data tables to prevent SQL injection
 const ALLOWED_TABLES = [
@@ -3251,6 +3256,10 @@ app.get('/api/notifications/alerts', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;

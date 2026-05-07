@@ -5,7 +5,7 @@ import {
   ChevronRight, ArrowRight, Target, Zap, ShieldCheck
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function ExecutiveDashboard() {
   const [data, setData] = useState(null);

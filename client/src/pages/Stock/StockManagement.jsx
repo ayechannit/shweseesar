@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, ArrowDown, ArrowUp, AlertTriangle, X, Search } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config';
 
 export default function StockManagement() {
   const [items, setItems] = useState([]);
