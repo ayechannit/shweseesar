@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Plus, FileText, Calendar, Edit2, Trash2 } from 'lucide-react';
+import apiRequest from '../../utils/api';
 
 export default function PatientClinicalModal({ isOpen, onClose, patient, apiBase }) {
   const [notes, setNotes] = useState([]);
@@ -32,8 +33,8 @@ export default function PatientClinicalModal({ isOpen, onClose, patient, apiBase
   const fetchNotes = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${apiBase}/patients/${patient.patient_id}/clinical-notes`);
-      if (res.ok) {
+      const res = await apiRequest(`/patients/${patient.patient_id}/clinical-notes`);
+      if (res && res.ok) {
         const data = await res.json();
         setNotes(data);
       }
@@ -51,15 +52,14 @@ export default function PatientClinicalModal({ isOpen, onClose, patient, apiBase
     }
 
     try {
-      const url = editingNoteId 
-        ? `${apiBase}/patients/clinical-notes/${editingNoteId}`
-        : `${apiBase}/patients/${patient.patient_id}/clinical-notes`;
+      const endpoint = editingNoteId 
+        ? `/patients/clinical-notes/${editingNoteId}`
+        : `/patients/${patient.patient_id}/clinical-notes`;
       
       const method = editingNoteId ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const res = await apiRequest(endpoint, {
         method,
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           record_date: recordDate,
           diagnosis,
@@ -68,7 +68,7 @@ export default function PatientClinicalModal({ isOpen, onClose, patient, apiBase
         })
       });
 
-      if (res.ok) {
+      if (res && res.ok) {
         await fetchNotes();
         resetForm();
       } else {
@@ -93,8 +93,8 @@ export default function PatientClinicalModal({ isOpen, onClose, patient, apiBase
     if (!window.confirm("Are you sure you want to delete this clinical record? This action cannot be undone.")) return;
 
     try {
-      const res = await fetch(`${apiBase}/patients/clinical-notes/${id}`, { method: 'DELETE' });
-      if (res.ok) {
+      const res = await apiRequest(`/patients/clinical-notes/${id}`, { method: 'DELETE' });
+      if (res && res.ok) {
         await fetchNotes();
       } else {
         alert("Failed to delete note.");

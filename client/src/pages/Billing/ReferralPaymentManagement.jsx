@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, CheckCircle, Clock, Calendar, User, DollarSign, FileText } from 'lucide-react';
-
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function ReferralPaymentManagement() {
   const [referrals, setReferrals] = useState([]);
@@ -26,9 +25,11 @@ export default function ReferralPaymentManagement() {
 
   const fetchReferredPersons = async () => {
     try {
-      const res = await fetch(`${API_BASE}/master-data/referred_persons?limit=200`);
-      const data = await res.json();
-      setReferredPersons(data.data || []);
+      const res = await apiRequest('/master-data/referred_persons?limit=200');
+      if (res && res.ok) {
+        const data = await res.json();
+        setReferredPersons(data.data || []);
+      }
     } catch (err) {
       console.error('Failed to fetch referred persons:', err);
     }
@@ -43,11 +44,13 @@ export default function ReferralPaymentManagement() {
       if (filters.to_date) queryParams.append('to_date', filters.to_date);
       if (filters.payment_status) queryParams.append('payment_status', filters.payment_status);
 
-      const res = await fetch(`${API_BASE}/billing/referrals?${queryParams.toString()}`);
-      const data = await res.json();
-      setReferrals(data || []);
-      // Clear selection on new fetch
-      setSelectedIds(new Set());
+      const res = await apiRequest(`/billing/referrals?${queryParams.toString()}`);
+      if (res && res.ok) {
+        const data = await res.json();
+        setReferrals(data || []);
+        // Clear selection on new fetch
+        setSelectedIds(new Set());
+      }
     } catch (err) {
       console.error('Failed to fetch referrals:', err);
     } finally {
@@ -59,10 +62,10 @@ export default function ReferralPaymentManagement() {
     if (!window.confirm('Mark this referral as paid?')) return;
     
     try {
-      const res = await fetch(`${API_BASE}/billing/referrals/${id}/pay`, {
+      const res = await apiRequest(`/billing/referrals/${id}/pay`, {
         method: 'POST'
       });
-      if (res.ok) {
+      if (res && res.ok) {
         fetchReferrals();
       } else {
         alert('Failed to process payment');
@@ -78,12 +81,11 @@ export default function ReferralPaymentManagement() {
     if (!window.confirm(`Mark ${selectedIds.size} referrals as paid?`)) return;
     
     try {
-      const res = await fetch(`${API_BASE}/billing/referrals/bulk-pay`, {
+      const res = await apiRequest('/billing/referrals/bulk-pay', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedIds) })
       });
-      if (res.ok) {
+      if (res && res.ok) {
         fetchReferrals();
       } else {
         alert('Failed to process bulk payment');

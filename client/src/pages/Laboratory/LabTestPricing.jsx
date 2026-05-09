@@ -5,7 +5,7 @@ import {
   ArrowRight, CheckCircle, AlertCircle, X, Layout
 } from 'lucide-react';
 
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function LabTestPricing() {
   const [laboratories, setLaboratories] = useState([]);
@@ -24,7 +24,7 @@ export default function LabTestPricing() {
 
   const fetchLaboratories = async () => {
     try {
-      const res = await fetch(`${API_BASE}/master-data/laboratories?limit=100`);
+      const res = await apiRequest('/master-data/laboratories?limit=100');
       const result = await res.json();
       setLaboratories(result.data || []);
     } catch (err) { console.error(err); }
@@ -33,7 +33,7 @@ export default function LabTestPricing() {
   const fetchTestPricing = async (labId) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/laboratories/${labId}/test-pricing`);
+      const res = await apiRequest(`/laboratories/${labId}/test-pricing`);
       const data = await res.json();
       setTestPrices(data || []);
     } catch (err) {
@@ -49,9 +49,8 @@ export default function LabTestPricing() {
 
   const handleSavePrice = async (item) => {
     try {
-      const res = await fetch(`${API_BASE}/laboratories/${selectedLabId}/test-pricing`, {
+      const res = await apiRequest(`/laboratories/${selectedLabId}/test-pricing`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           item_id: item.item_id,
           purchase_price: item.purchase_price,

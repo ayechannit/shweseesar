@@ -7,7 +7,8 @@ import {
   ClipboardList, Database, ChevronLeft, ChevronRight, Info
 } from 'lucide-react';
 
-import { API_BASE, UPLOAD_BASE } from '../../config';
+import apiRequest from '../../utils/api';
+import { UPLOAD_BASE } from '../../config';
 
 const Notification = ({ message, type, onClose }) => {
   useEffect(() => {
@@ -87,7 +88,7 @@ export default function LaboratoryManagement() {
   const fetchLaboratories = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/master-data/laboratories?limit=100`);
+      const res = await apiRequest('/master-data/laboratories?limit=100');
       const result = await res.json();
       setLaboratories(result.data || []);
     } catch (error) {
@@ -100,7 +101,7 @@ export default function LaboratoryManagement() {
   const fetchAllInvestigations = async () => {
     setLoadingInvs(true);
     try {
-      const res = await fetch(`${API_BASE}/investigations`);
+      const res = await apiRequest('/investigations');
       const data = await res.json();
       setInvestigations(data || []);
     } catch (error) {
@@ -113,7 +114,7 @@ export default function LaboratoryManagement() {
   const fetchLabInvestigations = async (labId) => {
     setLoadingInvs(true);
     try {
-      const res = await fetch(`${API_BASE}/laboratories/${labId}/investigations`);
+      const res = await apiRequest(`/laboratories/${labId}/investigations`);
       const data = await res.json();
       setInvestigations(data || []);
     } catch (error) {
@@ -125,9 +126,8 @@ export default function LaboratoryManagement() {
 
   const handleStatusUpdate = async (id, newStatus) => {
     try {
-      const res = await fetch(`${API_BASE}/investigations/${id}/status`, {
+      const res = await apiRequest(`/investigations/${id}/status`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
       if (res.ok) {
@@ -142,9 +142,8 @@ export default function LaboratoryManagement() {
   const handleBatchStatusUpdate = async (newStatus) => {
     if (selectedIds.length === 0) return;
     try {
-      const res = await fetch(`${API_BASE}/investigations/batch/status`, {
+      const res = await apiRequest('/investigations/batch/status', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: selectedIds, status: newStatus })
       });
       if (res.ok) {
@@ -163,7 +162,7 @@ export default function LaboratoryManagement() {
     formData.append('file', file);
 
     try {
-      const res = await fetch(`${API_BASE}/investigations/${id}/upload`, {
+      const res = await apiRequest(`/investigations/${id}/upload`, {
         method: 'POST',
         body: formData
       });

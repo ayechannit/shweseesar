@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, ArrowDown, ArrowUp, AlertTriangle, X, Search } from 'lucide-react';
 
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function StockManagement() {
   const [items, setItems] = useState([]);
@@ -62,7 +62,7 @@ export default function StockManagement() {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(`${API_BASE}/master-data/item_categories?limit=100`);
+      const res = await apiRequest('/master-data/item_categories?limit=100');
       const result = await res.json();
       const fetchedCats = result.data || [];
       setCategories(fetchedCats);
@@ -77,7 +77,7 @@ export default function StockManagement() {
 
   const fetchSubcategories = async () => {
     try {
-      const res = await fetch(`${API_BASE}/master-data/item_subcategories?limit=200`);
+      const res = await apiRequest('/master-data/item_subcategories?limit=200');
       const result = await res.json();
       setSubcategories(result.data || []);
     } catch (err) {
@@ -88,10 +88,10 @@ export default function StockManagement() {
   const fetchItems = async () => {
     setLoading(true);
     try {
-      let url = `${API_BASE}/stock/items?page=${page}&limit=${limit}`;
+      let url = `/stock/items?page=${page}&limit=${limit}`;
       if (categoryFilter) url += `&category_id=${categoryFilter}`;
       
-      const res = await fetch(url);
+      const res = await apiRequest(url);
       const result = await res.json();
       setItems(result.data || []);
       setTotalPages(result.totalPages || 1);
@@ -161,9 +161,8 @@ export default function StockManagement() {
     if (!newSubcatName.trim()) return;
     try {
       const catId = isEdit ? editModalSelectedCategoryId : modalSelectedCategoryId;
-      const res = await fetch(`${API_BASE}/master-data/item_subcategories`, {
+      const res = await apiRequest('/master-data/item_subcategories', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           name: newSubcatName, 
           category_id: catId 
@@ -194,9 +193,8 @@ export default function StockManagement() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/stock/items`, {
+      const res = await apiRequest('/stock/items', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(itemForm)
       });
       if (res.ok) {
@@ -210,11 +208,9 @@ export default function StockManagement() {
 
   const handleUpdateItem = async (e) => {
     e.preventDefault();
-    console.log(`Updating item at: ${API_BASE}/stock/items/${selectedItem.id}`);
     try {
-      const res = await fetch(`${API_BASE}/stock/items/${selectedItem.id}`, {
+      const res = await apiRequest(`/stock/items/${selectedItem.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm)
       });
       if (res.ok) {
@@ -235,9 +231,8 @@ export default function StockManagement() {
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/stock/adjust`, {
+      const res = await apiRequest('/stock/adjust', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(adjustForm)
       });
       if (res.ok) {
@@ -267,7 +262,7 @@ export default function StockManagement() {
   const handleDeleteItem = async (id) => {
     if (!window.confirm("Are you sure you want to delete this item?")) return;
     try {
-      const res = await fetch(`${API_BASE}/stock/items/${id}`, {
+      const res = await apiRequest(`/stock/items/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {

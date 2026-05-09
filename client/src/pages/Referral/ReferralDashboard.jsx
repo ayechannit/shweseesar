@@ -3,7 +3,7 @@ import {
   Users, DollarSign, AlertCircle, Calendar, Zap, TrendingUp, Award
 } from 'lucide-react';
 
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function ReferralDashboard() {
   const [data, setData] = useState(null);
@@ -23,7 +23,7 @@ export default function ReferralDashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/dashboard/referral?startDate=${startDate}&endDate=${endDate}`);
+      const res = await apiRequest(`/dashboard/referral?startDate=${startDate}&endDate=${endDate}`);
       const result = await res.json();
       setData(result);
     } catch (err) {

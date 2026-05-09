@@ -5,7 +5,7 @@ import {
   ArrowRight, CreditCard, History
 } from 'lucide-react';
 
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function LabPaymentManagement() {
   const [investigations, setInvestigations] = useState([]);
@@ -28,7 +28,7 @@ export default function LabPaymentManagement() {
 
   const fetchLaboratories = async () => {
     try {
-      const res = await fetch(`${API_BASE}/master-data/laboratories?limit=100`);
+      const res = await apiRequest('/master-data/laboratories?limit=100');
       const data = await res.json();
       setLaboratories(data.data || []);
     } catch (err) {
@@ -40,7 +40,7 @@ export default function LabPaymentManagement() {
     setLoading(true);
     try {
       const queryParams = new URLSearchParams(filters);
-      const res = await fetch(`${API_BASE}/lab-payments?${queryParams.toString()}`);
+      const res = await apiRequest(`/lab-payments?${queryParams.toString()}`);
       const data = await res.json();
       setInvestigations(data || []);
       setSelectedIds(new Set()); // Clear selection
@@ -56,9 +56,8 @@ export default function LabPaymentManagement() {
     if (!window.confirm(`Mark ${selectedIds.size} investigations as paid to laboratory?`)) return;
 
     try {
-      const res = await fetch(`${API_BASE}/lab-payments/bulk-pay`, {
+      const res = await apiRequest('/lab-payments/bulk-pay', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedIds) })
       });
       if (res.ok) {

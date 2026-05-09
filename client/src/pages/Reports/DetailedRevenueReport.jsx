@@ -4,6 +4,7 @@ import {
   TrendingDown, TrendingUp, ShieldCheck, Calculator, ArrowRight, Target
 } from 'lucide-react';
 
+import apiRequest from '../../utils/api';
 import { API_BASE } from '../../config';
 
 export default function RevenueProfitDashboard() {
@@ -24,7 +25,7 @@ export default function RevenueProfitDashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/dashboard/revenue-profit?startDate=${startDate}&endDate=${endDate}`);
+      const res = await apiRequest(`/dashboard/revenue-profit?startDate=${startDate}&endDate=${endDate}`);
       const result = await res.json();
       setData(result);
     } catch (err) {

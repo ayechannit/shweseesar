@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, X, ChevronLeft, ChevronRight, Search, Filter } from 'lucide-react';
 
+import apiRequest from '../../utils/api';
 import { API_BASE } from '../../config';
 
 export default function ClinicReferralTransaction() {
@@ -47,7 +48,7 @@ export default function ClinicReferralTransaction() {
         ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v !== ''))
       });
 
-      const res = await fetch(`${API_BASE}/clinic-referral-transactions?${queryParams}`);
+      const res = await apiRequest(`/clinic-referral-transactions?${queryParams}`);
       const result = await res.json();
       setTransactions(result.data || []);
       setTotalPages(result.totalPages || 1);
@@ -63,8 +64,8 @@ export default function ClinicReferralTransaction() {
   const fetchDropdownData = async () => {
     try {
       const [patientsRes, clinicsRes] = await Promise.all([
-        fetch(`${API_BASE}/master-data/patients?limit=1000`),
-        fetch(`${API_BASE}/master-data/refer_clinics?limit=1000`)
+        apiRequest('/master-data/patients?limit=1000'),
+        apiRequest('/master-data/refer_clinics?limit=1000')
       ]);
       const patientsData = await patientsRes.json();
       const clinicsData = await clinicsRes.json();
@@ -126,9 +127,8 @@ export default function ClinicReferralTransaction() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/clinic-referral-transactions`, {
+      const res = await apiRequest('/clinic-referral-transactions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
 
@@ -155,9 +155,8 @@ export default function ClinicReferralTransaction() {
   const handleUpdateVisitType = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/clinic-referral-transactions/${selectedTx.id}/visit-type`, {
+      const res = await apiRequest(`/clinic-referral-transactions/${selectedTx.id}/visit-type`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateForm)
       });
       if (res.ok) {
@@ -177,7 +176,7 @@ export default function ClinicReferralTransaction() {
     if (!window.confirm('Are you sure you want to mark this transaction as Paid?')) return;
     
     try {
-      const res = await fetch(`${API_BASE}/clinic-referral-transactions/${txId}/pay`, {
+      const res = await apiRequest(`/clinic-referral-transactions/${txId}/pay`, {
         method: 'POST'
       });
       if (res.ok) {

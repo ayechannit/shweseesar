@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Truck, Plus, Eye, X, AlertTriangle, ShoppingBag, Search } from 'lucide-react';
 
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function PurchaseManagement() {
   const [purchases, setPurchases] = useState([]);
@@ -61,7 +61,7 @@ export default function PurchaseManagement() {
   const fetchPurchases = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/purchases?page=${page}&limit=10`);
+      const res = await apiRequest(`/purchases?page=${page}&limit=10`);
       const data = await res.json();
       setPurchases(data.data || []);
       setTotalPages(data.totalPages || 1);
@@ -74,7 +74,7 @@ export default function PurchaseManagement() {
 
   const fetchSuppliers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/master-data/suppliers?limit=100`);
+      const res = await apiRequest('/master-data/suppliers?limit=100');
       const data = await res.json();
       setSuppliers(data.data || []);
     } catch (err) {
@@ -84,7 +84,7 @@ export default function PurchaseManagement() {
 
   const fetchStockItems = async () => {
     try {
-      const res = await fetch(`${API_BASE}/stock/items?limit=1000&category_id=1`);
+      const res = await apiRequest('/stock/items?limit=1000&category_id=1');
       const data = await res.json();
       setStockItems(data.data || []);
     } catch (err) {
@@ -94,7 +94,7 @@ export default function PurchaseManagement() {
 
   const viewPurchase = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/purchases/${id}`);
+      const res = await apiRequest(`/purchases/${id}`);
       const data = await res.json();
       setSelectedPurchase(data);
       setIsViewOpen(true);
@@ -214,9 +214,8 @@ export default function PurchaseManagement() {
   const handleSaveSupplier = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/master-data/suppliers`, {
+      const res = await apiRequest('/master-data/suppliers', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSupplier)
       });
       if (res.ok) {
@@ -255,9 +254,8 @@ export default function PurchaseManagement() {
     };
 
     try {
-      const res = await fetch(`${API_BASE}/purchases`, {
+      const res = await apiRequest('/purchases', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       if (res.ok) {

@@ -4,8 +4,7 @@ import {
   AlertCircle, ShoppingCart, CreditCard, ArrowUpRight, Receipt, 
   ChevronRight, ArrowRight, Target, Zap, ShieldCheck
 } from 'lucide-react';
-
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function ExecutiveDashboard() {
   const [data, setData] = useState(null);
@@ -25,9 +24,11 @@ export default function ExecutiveDashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/dashboard/executive?startDate=${startDate}&endDate=${endDate}`);
-      const result = await res.json();
-      setData(result);
+      const res = await apiRequest(`/dashboard/executive?startDate=${startDate}&endDate=${endDate}`);
+      if (res && res.ok) {
+        const result = await res.json();
+        setData(result);
+      }
     } catch (err) {
       console.error('Failed to fetch executive dashboard data:', err);
     } finally {

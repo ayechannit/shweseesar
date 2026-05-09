@@ -5,6 +5,9 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { authenticateToken, authorize, JWT_SECRET } = require('./middleware/auth');
 require('dotenv').config();
 
 const app = express();
@@ -55,7 +58,7 @@ const validateTable = (req, res, next) => {
 };
 
 // --- Settings Routes ---
-app.get('/api/settings/voucher', async (req, res) => {
+app.get('/api/settings/voucher', authenticateToken, async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM voucher_settings WHERE id = 1');
     if (result.rows.length === 0) {
@@ -68,7 +71,7 @@ app.get('/api/settings/voucher', async (req, res) => {
   }
 });
 
-app.put('/api/settings/voucher', upload.single('icon'), async (req, res) => {
+app.put('/api/settings/voucher', authenticateToken, authorize(['manage_settings']), upload.single('icon'), async (req, res) => {
   const { margin_top, margin_right, margin_bottom, margin_left, width, height, address, description } = req.body;
   let icon_path = req.body.icon_path || null;
 
@@ -79,11 +82,11 @@ app.put('/api/settings/voucher', upload.single('icon'), async (req, res) => {
   try {
     const query = `
       UPDATE voucher_settings
-      SET margin_top = $1, margin_right = $2, margin_bottom = $3, margin_left = $4, width = $5, height = $6, address = $7, description = $8, icon_path = COALESCE($9, icon_path), updated_at = CURRENT_TIMESTAMP
+      SET margin_top = $1, margin_right = $2, margin_bottom = $3, margin_left = $4, width = $5, height = $6, address = $7, description = $8, icon_path = COALESCE($9, icon_path), updated_at = CURRENT_TIMESTAMP, updated_by = $10
       WHERE id = 1
       RETURNING *
     `;
-    const result = await db.query(query, [margin_top, margin_right, margin_bottom, margin_left, width, height, address, description, icon_path]);
+    const result = await db.query(query, [margin_top, margin_right, margin_bottom, margin_left, width, height, address, description, icon_path, req.user.id]);
     res.json(result.rows[0]);
   } catch (err) {
     console.error('SETTINGS UPDATE ERROR:', err);
@@ -93,7 +96,7 @@ app.put('/api/settings/voucher', upload.single('icon'), async (req, res) => {
 // --- Generic CRUD Routes for Master Data ---
 
 // GET: Retrieve paginated active records
-app.get('/api/master-data/:table', validateTable, async (req, res) => {
+app.get('/api/master-data/:table', authenticateToken, validateTable, async (req, res) => {
   const { table } = req.params;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
@@ -124,7 +127,7 @@ app.get('/api/master-data/:table', validateTable, async (req, res) => {
 });
 
 // POST: Create a new record
-app.post('/api/master-data/:table', validateTable, async (req, res) => {
+app.post('/api/master-data/:table', authenticateToken, validateTable, async (req, res) => {
   const { table } = req.params;
   const data = req.body;
   
@@ -138,6 +141,9 @@ app.post('/api/master-data/:table', validateTable, async (req, res) => {
   delete safeData.created_at;
   delete safeData.updated_at;
   delete safeData.is_active;
+
+  // Add audit field
+  safeData.created_by = req.user.id;
 
   // Auto-generate patient_code
   if (table === 'patients' && !safeData.patient_code) {
@@ -166,7 +172,7 @@ app.post('/api/master-data/:table', validateTable, async (req, res) => {
 });
 
 // PUT: Update an existing record
-app.put('/api/master-data/:table/:id', validateTable, async (req, res) => {
+app.put('/api/master-data/:table/:id', authenticateToken, validateTable, async (req, res) => {
   const { table, id } = req.params;
   const data = req.body;
   
@@ -175,6 +181,9 @@ app.put('/api/master-data/:table/:id', validateTable, async (req, res) => {
   delete safeData.created_at;
   delete safeData.updated_at;
   delete safeData.is_active;
+
+  // Add audit field
+  safeData.updated_by = req.user.id;
 
   if (Object.keys(safeData).length === 0) {
     return res.status(400).json({ error: 'No data to update' });
@@ -209,18 +218,18 @@ app.put('/api/master-data/:table/:id', validateTable, async (req, res) => {
 });
 
 // DELETE: Soft delete a record
-app.delete('/api/master-data/:table/:id', validateTable, async (req, res) => {
+app.delete('/api/master-data/:table/:id', authenticateToken, validateTable, async (req, res) => {
   const { table, id } = req.params;
   
   const query = `
     UPDATE ${table}
-    SET is_active = false, updated_at = CURRENT_TIMESTAMP
-    WHERE id = $1 AND is_active = true
+    SET is_active = false, updated_at = CURRENT_TIMESTAMP, updated_by = $1
+    WHERE id = $2 AND is_active = true
     RETURNING id;
   `;
 
   try {
-    const result = await db.query(query, [id]);
+    const result = await db.query(query, [req.user.id, id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Record not found or already deleted' });
     }
@@ -234,7 +243,7 @@ app.delete('/api/master-data/:table/:id', validateTable, async (req, res) => {
 // --- Clinic Referral Transactions Routes ---
 
 // GET: All clinic referral transactions
-app.get('/api/clinic-referral-transactions', async (req, res) => {
+app.get('/api/clinic-referral-transactions', authenticateToken, async (req, res) => {
   const { page = 1, limit = 10, refer_clinic_id, patient_name, visit_type, from_date, to_date, payment_status } = req.query;
   const offset = (page - 1) * limit;
 
@@ -316,14 +325,14 @@ app.get('/api/clinic-referral-transactions', async (req, res) => {
 });
 
 // POST: Mark transaction as paid
-app.post('/api/clinic-referral-transactions/:id/pay', async (req, res) => {
+app.post('/api/clinic-referral-transactions/:id/pay', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
     const result = await db.query(`
       UPDATE clinic_referral_transactions 
-      SET payment_status = 'Paid', updated_at = CURRENT_TIMESTAMP 
-      WHERE id = $1 RETURNING *
-    `, [id]);
+      SET payment_status = 'Paid', updated_at = CURRENT_TIMESTAMP, updated_by = $1
+      WHERE id = $2 RETURNING *
+    `, [req.user.id, id]);
     res.json(result.rows[0]);
   } catch (err) {
     console.error('PAYMENT ERROR:', err);
@@ -332,7 +341,7 @@ app.post('/api/clinic-referral-transactions/:id/pay', async (req, res) => {
 });
 
 // POST: Create a new clinic referral transaction
-app.post('/api/clinic-referral-transactions', async (req, res) => {
+app.post('/api/clinic-referral-transactions', authenticateToken, async (req, res) => {
   const { patient_id, refer_clinic_id, notes } = req.body;
   
   if (!patient_id || !refer_clinic_id) {
@@ -341,11 +350,11 @@ app.post('/api/clinic-referral-transactions', async (req, res) => {
 
   try {
     const query = `
-      INSERT INTO clinic_referral_transactions (patient_id, refer_clinic_id, visit_type, commission_amount, notes)
-      VALUES ($1, $2, NULL, 0.00, $3)
+      INSERT INTO clinic_referral_transactions (patient_id, refer_clinic_id, visit_type, commission_amount, notes, created_by)
+      VALUES ($1, $2, NULL, 0.00, $3, $4)
       RETURNING *;
     `;
-    const result = await db.query(query, [patient_id, refer_clinic_id, notes]);
+    const result = await db.query(query, [patient_id, refer_clinic_id, notes, req.user.id]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('CREATE CLINIC REFERRAL TRANSACTION ERROR:', err);
@@ -354,7 +363,7 @@ app.post('/api/clinic-referral-transactions', async (req, res) => {
 });
 
 // PUT: Update visit type and calculate commission
-app.put('/api/clinic-referral-transactions/:id/visit-type', async (req, res) => {
+app.put('/api/clinic-referral-transactions/:id/visit-type', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { visit_type } = req.body;
 
@@ -387,10 +396,10 @@ app.put('/api/clinic-referral-transactions/:id/visit-type', async (req, res) => 
 
     const updateRes = await client.query(`
       UPDATE clinic_referral_transactions
-      SET visit_type = $1, commission_amount = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
+      SET visit_type = $1, commission_amount = $2, updated_at = CURRENT_TIMESTAMP, updated_by = $3
+      WHERE id = $4
       RETURNING *;
-    `, [visit_type, commission_amount, id]);
+    `, [visit_type, commission_amount, req.user.id, id]);
 
     await client.query('COMMIT');
     res.json(updateRes.rows[0]);
@@ -405,7 +414,7 @@ app.put('/api/clinic-referral-transactions/:id/visit-type', async (req, res) => 
 
 // --- Dashboard Analytics ---
 
-app.get('/api/dashboard/revenue-profit', async (req, res) => {
+app.get('/api/dashboard/revenue-profit', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     const today = new Date();
@@ -519,7 +528,7 @@ app.get('/api/dashboard/revenue-profit', async (req, res) => {
   }
 });
 
-app.get('/api/dashboard/purchase', async (req, res) => {
+app.get('/api/dashboard/purchase', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     const today = new Date();
@@ -586,7 +595,7 @@ app.get('/api/dashboard/purchase', async (req, res) => {
   }
 });
 
-app.get('/api/dashboard/external-referral', async (req, res) => {
+app.get('/api/dashboard/external-referral', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     const today = new Date();
@@ -647,7 +656,7 @@ app.get('/api/dashboard/external-referral', async (req, res) => {
   }
 });
 
-app.get('/api/dashboard/referral', async (req, res) => {
+app.get('/api/dashboard/referral', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     const today = new Date();
@@ -699,7 +708,7 @@ app.get('/api/dashboard/referral', async (req, res) => {
   }
 });
 
-app.get('/api/dashboard/inventory', async (req, res) => {
+app.get('/api/dashboard/inventory', authenticateToken, async (req, res) => {
   try {
     const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
@@ -770,7 +779,7 @@ app.get('/api/dashboard/inventory', async (req, res) => {
   }
 });
 
-app.get('/api/dashboard/laboratory', async (req, res) => {
+app.get('/api/dashboard/laboratory', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     const today = new Date();
@@ -840,7 +849,7 @@ app.get('/api/dashboard/laboratory', async (req, res) => {
   }
 });
 
-app.get('/api/dashboard/executive', async (req, res) => {
+app.get('/api/dashboard/executive', authenticateToken, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     
@@ -939,94 +948,135 @@ app.get('/api/dashboard/executive', async (req, res) => {
   }
 });
 
-app.get('/api/dashboard/tca', async (req, res) => {
-  const { fromDate, toDate, physicianId, search } = req.query;
+app.get('/api/dashboard/patients', authenticateToken, async (req, res) => {
+  const { search, physicianId, fromDate, toDate, limit = 50, page = 1 } = req.query;
+  const offset = (page - 1) * limit;
 
   try {
-    let baseQuery = `
-      FROM vouchers v
-      JOIN patients p ON v.patient_id = p.id
-      LEFT JOIN physicians ph ON v.physician_id = ph.id
-      WHERE v.tca_date IS NOT NULL
-    `;
-    const params = [];
+    // 1. Get Global Total Patient Count
+    const totalCountRes = await db.query('SELECT COUNT(*) FROM patients');
+    const totalCount = parseInt(totalCountRes.rows[0].count);
 
-    if (fromDate) {
-      params.push(fromDate);
-      baseQuery += ` AND v.tca_date >= $${params.length}`;
-    }
-    if (toDate) {
-      params.push(toDate);
-      baseQuery += ` AND v.tca_date <= $${params.length}`;
-    }
-    if (physicianId) {
-      params.push(physicianId);
-      baseQuery += ` AND v.physician_id = $${params.length}`;
-    }
-    if (search) {
-      params.push(`%${search}%`);
-      baseQuery += ` AND (p.name ILIKE $${params.length} OR p.patient_code ILIKE $${params.length} OR p.phone_number ILIKE $${params.length})`;
-    }
+    // 2. Get New Patients Today
+    const todayCountRes = await db.query('SELECT COUNT(*) FROM patients WHERE DATE(created_at) = CURRENT_DATE');
+    const todayCount = parseInt(todayCountRes.rows[0].count);
 
-    // Get Total Count based on filters (count unique patients)
-    const countRes = await db.query(`SELECT COUNT(DISTINCT v.patient_id) ${baseQuery}`, params);
-    const totalCount = parseInt(countRes.rows[0].count);
+    // 3. Get Total TCA Patients
+    const totalTcaRes = await db.query('SELECT COUNT(DISTINCT patient_id) FROM vouchers WHERE tca_date >= CURRENT_DATE');
+    const totalTcaCount = parseInt(totalTcaRes.rows[0].count);
 
-    // Get Tomorrow's Count
+    // 4. Get Tomorrow's TCA Patients
     const today = new Date();
-    // Use local timezone to calculate tomorrow's date string
     const tomorrow = new Date(today.getTime() - (today.getTimezoneOffset() * 60000));
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('T')[0];
     
-    let tomorrowQuery = `
-      SELECT COUNT(DISTINCT v.patient_id)
-      FROM vouchers v
-      WHERE v.tca_date = $1
-    `;
-    const tomorrowParams = [tomorrowStr];
-    if (physicianId) {
-      tomorrowParams.push(physicianId);
-      tomorrowQuery += ` AND v.physician_id = $2`;
+    const tomorrowTcaRes = await db.query('SELECT COUNT(DISTINCT patient_id) FROM vouchers WHERE tca_date = $1', [tomorrowStr]);
+    const tomorrowTcaCount = parseInt(tomorrowTcaRes.rows[0].count);
+
+
+    // 5. Get Patient List (with search filtering)
+    let listQuery = '';
+    const params = [];
+    let paramIndex = 1;
+
+    // Base conditions for the patient
+    let patientConditions = [];
+    if (search) {
+      patientConditions.push(`(p.name ILIKE $${paramIndex} OR p.patient_code ILIKE $${paramIndex} OR p.phone_number ILIKE $${paramIndex})`);
+      params.push(`%${search}%`);
+      paramIndex++;
     }
-    const tomorrowCountRes = await db.query(tomorrowQuery, tomorrowParams);
-    const tomorrowCount = parseInt(tomorrowCountRes.rows[0].count);
 
-    // Get the Patients Details
-    // Using DISTINCT ON to get the latest voucher for each patient that matches the criteria
-    const patientsQuery = `
-      SELECT DISTINCT ON (v.patient_id)
-        v.patient_id,
-        p.name as patient_name,
-        p.patient_code,
-        p.phone_number,
-        ph.name as physician_name,
-        v.tca_date,
-        v.voucher_number,
-        v.created_at as voucher_date,
-        v.id as voucher_id
-      ${baseQuery}
-      ORDER BY v.patient_id, v.created_at DESC
-    `;
+    if (physicianId || fromDate || toDate) {
+      // If we are filtering by TCA date or physician, we need to base the list on the vouchers that MATCH those filters.
+      let voucherConditions = ['v.tca_date IS NOT NULL']; // Implicitly, if we filter by these, we care about TCA
+      
+      if (physicianId) {
+        voucherConditions.push(`v.physician_id = $${paramIndex}`);
+        params.push(physicianId);
+        paramIndex++;
+      }
+      if (fromDate) {
+        voucherConditions.push(`v.tca_date >= $${paramIndex}`);
+        params.push(fromDate);
+        paramIndex++;
+      }
+      if (toDate) {
+        voucherConditions.push(`v.tca_date <= $${paramIndex}`);
+        params.push(toDate);
+        paramIndex++;
+      }
 
-    const patientsRes = await db.query(patientsQuery, params);
+      let patientWhere = patientConditions.length > 0 ? `AND ${patientConditions.join(' AND ')}` : '';
 
-    // Sort the resulting distinct patients by TCA date
-    const patients = patientsRes.rows.sort((a, b) => new Date(a.tca_date) - new Date(b.tca_date));
+      // Use DISTINCT ON patient_id, ordered by the TCA date that matches, or created_at
+      listQuery = `
+        SELECT DISTINCT ON (v.patient_id)
+          p.id as patient_id, 
+          p.name as patient_name, 
+          p.patient_code, 
+          p.phone_number,
+          v.created_at as last_visit_date,
+          v.voucher_number,
+          ph.name as physician_name,
+          v.tca_date
+        FROM vouchers v
+        JOIN patients p ON v.patient_id = p.id
+        LEFT JOIN physicians ph ON v.physician_id = ph.id
+        WHERE ${voucherConditions.join(' AND ')} ${patientWhere}
+        ORDER BY v.patient_id, v.created_at DESC
+      `;
+      // Note: We'll apply limit/offset in JS or wrap this in another SELECT because DISTINCT ON requires ORDER BY patient_id first.
+      
+      // Wrapping it to allow proper ordering by created_at overall
+      listQuery = `
+        WITH FilteredVouchers AS (${listQuery})
+        SELECT * FROM FilteredVouchers
+        ORDER BY last_visit_date DESC
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `;
+
+    } else {
+      // Default view: No TCA filters, just show recent patients and their absolute latest info
+      let whereSql = patientConditions.length > 0 ? `WHERE ${patientConditions.join(' AND ')}` : '';
+      
+      listQuery = `
+        SELECT 
+          p.id as patient_id, 
+          p.name as patient_name, 
+          p.patient_code, 
+          p.phone_number,
+          (SELECT v.created_at FROM vouchers v WHERE v.patient_id = p.id ORDER BY v.created_at DESC LIMIT 1) as last_visit_date,
+          (SELECT v.voucher_number FROM vouchers v WHERE v.patient_id = p.id ORDER BY v.created_at DESC LIMIT 1) as voucher_number,
+          (SELECT ph.name FROM vouchers v LEFT JOIN physicians ph ON v.physician_id = ph.id WHERE v.patient_id = p.id ORDER BY v.created_at DESC LIMIT 1) as physician_name,
+          (SELECT v.tca_date FROM vouchers v WHERE v.patient_id = p.id ORDER BY v.created_at DESC LIMIT 1) as tca_date
+        FROM patients p
+        ${whereSql}
+        ORDER BY p.created_at DESC 
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `;
+    }
+
+    params.push(limit, offset);
+
+    const patientsRes = await db.query(listQuery, params);
 
     res.json({
       totalCount,
-      tomorrowCount,
-      patients
+      todayCount,
+      totalTcaCount,
+      tomorrowTcaCount,
+      patients: patientsRes.rows
     });
 
   } catch (err) {
-    console.error('TCA DASHBOARD ERROR:', err);
-    res.status(500).json({ error: 'Failed to fetch TCA dashboard data' });
+    console.error('PATIENTS DASHBOARD ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch patients dashboard data' });
   }
 });
 
-app.get('/api/dashboard/summary', async (req, res) => {
+app.get('/api/dashboard/summary', authenticateToken, async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
     const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
@@ -1145,7 +1195,7 @@ app.get('/api/dashboard/summary', async (req, res) => {
 // --- Reports Center APIs ---
 
 // GET: Revenue Reports
-app.get('/api/reports/revenue', async (req, res) => {
+app.get('/api/reports/revenue', authenticateToken, async (req, res) => {
   const { start_date, end_date } = req.query;
   const start = start_date || new Date().toISOString().split('T')[0];
   const end = (end_date || start) + ' 23:59:59';
@@ -1240,7 +1290,7 @@ app.get('/api/reports/revenue', async (req, res) => {
 });
 
 // GET: Referral Reports
-app.get('/api/reports/referrals', async (req, res) => {
+app.get('/api/reports/referrals', authenticateToken, async (req, res) => {
   const { start_date, end_date } = req.query;
   const start = start_date || new Date().toISOString().split('T')[0];
   const end = (end_date || start) + ' 23:59:59';
@@ -1289,7 +1339,7 @@ app.get('/api/reports/referrals', async (req, res) => {
 });
 
 // GET: Stock Reports
-app.get('/api/reports/stock', async (req, res) => {
+app.get('/api/reports/stock', authenticateToken, async (req, res) => {
   const { start_date, end_date } = req.query;
   const start = start_date || new Date().toISOString().split('T')[0];
   const end = (end_date || start) + ' 23:59:59';
@@ -1371,7 +1421,7 @@ app.get('/api/reports/stock', async (req, res) => {
 });
 
 // GET: Patient Reports
-app.get('/api/reports/patients', async (req, res) => {
+app.get('/api/reports/patients', authenticateToken, async (req, res) => {
   const { start_date, end_date } = req.query;
   const start = start_date || new Date().toISOString().split('T')[0];
   const end = (end_date || start) + ' 23:59:59';
@@ -1430,7 +1480,7 @@ app.get('/api/reports/patients', async (req, res) => {
 });
 
 // GET: Appointment Reports
-app.get('/api/reports/appointments', async (req, res) => {
+app.get('/api/reports/appointments', authenticateToken, async (req, res) => {
   const { start_date, end_date } = req.query;
   const start = start_date || new Date().toISOString().split('T')[0];
   const end = (end_date || start) + ' 23:59:59';
@@ -1477,7 +1527,7 @@ app.get('/api/reports/appointments', async (req, res) => {
 });
 
 // GET: Financial Reports
-app.get('/api/reports/financial', async (req, res) => {
+app.get('/api/reports/financial', authenticateToken, async (req, res) => {
   const { start_date, end_date } = req.query;
   const start = start_date || new Date().toISOString().split('T')[0];
   const end = (end_date || start) + ' 23:59:59';
@@ -1538,7 +1588,7 @@ app.get('/api/reports/financial', async (req, res) => {
 // --- Reception Module Routes ---
 
 // Patient Search
-app.get('/api/reception/patients/search', async (req, res) => {
+app.get('/api/reception/patients/search', authenticateToken, async (req, res) => {
   const { query } = req.query; // Search by name, phone_number, patient_code
   const { dob } = req.query;   // Search by date_of_birth exactly
   const page = parseInt(req.query.page) || 1;
@@ -1584,7 +1634,7 @@ app.get('/api/reception/patients/search', async (req, res) => {
 });
 
 // GET: Appointments (with related patient and physician data)
-app.get('/api/appointments', async (req, res) => {
+app.get('/api/appointments', authenticateToken, async (req, res) => {
   const date = req.query.date; // Optional: filter by specific date
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
@@ -1636,7 +1686,7 @@ app.get('/api/appointments', async (req, res) => {
 });
 
 // POST: Book Appointment
-app.post('/api/appointments', async (req, res) => {
+app.post('/api/appointments', authenticateToken, async (req, res) => {
   const { patient_id, physician_id, appointment_date, reason } = req.body;
   if (!patient_id || !physician_id || !appointment_date) {
     return res.status(400).json({ error: 'Missing required appointment fields' });
@@ -1644,11 +1694,11 @@ app.post('/api/appointments', async (req, res) => {
 
   try {
     const query = `
-      INSERT INTO appointments (patient_id, physician_id, appointment_date, reason, status)
-      VALUES ($1, $2, $3, $4, 'Scheduled')
+      INSERT INTO appointments (patient_id, physician_id, appointment_date, reason, status, created_by)
+      VALUES ($1, $2, $3, $4, 'Scheduled', $5)
       RETURNING *;
     `;
-    const values = [patient_id, physician_id, appointment_date, reason || ''];
+    const values = [patient_id, physician_id, appointment_date, reason || '', req.user.id];
     const result = await db.query(query, values);
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -1658,7 +1708,7 @@ app.post('/api/appointments', async (req, res) => {
 });
 
 // PUT: Update Appointment Status
-app.put('/api/appointments/:id/status', async (req, res) => {
+app.put('/api/appointments/:id/status', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   
@@ -1667,11 +1717,11 @@ app.put('/api/appointments/:id/status', async (req, res) => {
   try {
     const query = `
       UPDATE appointments 
-      SET status = $1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $2 AND is_active = true
+      SET status = $1, updated_at = CURRENT_TIMESTAMP, updated_by = $2
+      WHERE id = $3 AND is_active = true
       RETURNING *;
     `;
-    const result = await db.query(query, [status, id]);
+    const result = await db.query(query, [status, req.user.id, id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -1683,16 +1733,16 @@ app.put('/api/appointments/:id/status', async (req, res) => {
 });
 
 // DELETE: Cancel/Delete Appointment
-app.delete('/api/appointments/:id', async (req, res) => {
+app.delete('/api/appointments/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
     const query = `
       UPDATE appointments 
-      SET is_active = false, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND is_active = true
+      SET is_active = false, updated_at = CURRENT_TIMESTAMP, updated_by = $1
+      WHERE id = $2 AND is_active = true
       RETURNING id;
     `;
-    const result = await db.query(query, [id]);
+    const result = await db.query(query, [req.user.id, id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
@@ -1706,7 +1756,7 @@ app.delete('/api/appointments/:id', async (req, res) => {
 // --- Stock Management Module Routes ---
 
 // List all stock items with current aggregate quantity
-app.get('/api/stock/items', async (req, res) => {
+app.get('/api/stock/items', authenticateToken, async (req, res) => {
   const { subcategory_id, category_id } = req.query; 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
@@ -1772,7 +1822,7 @@ app.get('/api/stock/items', async (req, res) => {
 });
 
 // Add new stock item
-app.post('/api/stock/items', async (req, res) => {
+app.post('/api/stock/items', authenticateToken, async (req, res) => {
   const { 
     subcategory_id, item_code, name, unit, min_stock_level,
     default_purchase_price, default_sale_price, pricing_method, markup_percentage 
@@ -1782,15 +1832,15 @@ app.post('/api/stock/items', async (req, res) => {
     const query = `
       INSERT INTO stock_items (
         subcategory_id, item_code, name, unit, min_stock_level,
-        default_purchase_price, default_sale_price, pricing_method, markup_percentage
+        default_purchase_price, default_sale_price, pricing_method, markup_percentage, created_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *;
     `;
     const result = await db.query(query, [
       subcategory_id, item_code, name, unit, min_stock_level || 0,
       default_purchase_price || 0, default_sale_price || 0, 
-      pricing_method || 'MANUAL', markup_percentage || 0
+      pricing_method || 'MANUAL', markup_percentage || 0, req.user.id
     ]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -1804,7 +1854,7 @@ app.put('/test-put', (req, res) => {
 });
 
 // Update stock item
-app.put('/api/stock/items/:id', async (req, res) => {
+app.put('/api/stock/items/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   fs.appendFileSync('hit.log', `PUT /api/stock/items/${id} hit at ${new Date().toISOString()}\n`);
   const { 
@@ -1816,15 +1866,15 @@ app.put('/api/stock/items/:id', async (req, res) => {
       UPDATE stock_items
       SET subcategory_id = $1, item_code = $2, name = $3, unit = $4, min_stock_level = $5,
           default_purchase_price = $6, default_sale_price = $7, pricing_method = $8, markup_percentage = $9,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $10 AND is_active = true
+          updated_at = CURRENT_TIMESTAMP, updated_by = $10
+      WHERE id = $11 AND is_active = true
       RETURNING *;
     `;
     const result = await db.query(query, [
       subcategory_id, item_code, name, unit, min_stock_level || 0,
       default_purchase_price || 0, default_sale_price || 0,
       pricing_method || 'MANUAL', markup_percentage || 0,
-      id
+      req.user.id, id
     ]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Item not found' });
@@ -1837,16 +1887,16 @@ app.put('/api/stock/items/:id', async (req, res) => {
 });
 
 // Delete stock item (soft delete)
-app.delete('/api/stock/items/:id', async (req, res) => {
+app.delete('/api/stock/items/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
     const query = `
       UPDATE stock_items
-      SET is_active = false, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND is_active = true
+      SET is_active = false, updated_at = CURRENT_TIMESTAMP, updated_by = $1
+      WHERE id = $2 AND is_active = true
       RETURNING id;
     `;
-    const result = await db.query(query, [id]);
+    const result = await db.query(query, [req.user.id, id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Item not found' });
     }
@@ -1858,7 +1908,7 @@ app.delete('/api/stock/items/:id', async (req, res) => {
 });
 
 // GET: All batches for a specific item (for management/editing)
-app.get('/api/stock/batches/:itemId', async (req, res) => {
+app.get('/api/stock/batches/:itemId', authenticateToken, async (req, res) => {
   const { itemId } = req.params;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
@@ -1892,24 +1942,24 @@ app.get('/api/stock/batches/:itemId', async (req, res) => {
 });
 
 // POST: Add new stock batch (Purchase/Stock IN)
-app.post('/api/stock/purchase', async (req, res) => {
+app.post('/api/stock/purchase', authenticateToken, async (req, res) => {
   const { item_id, batch_number, expiry_date, quantity, purchase_price, sale_price } = req.body;
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     // 1. Create the batch
     const batchQuery = `
-      INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id;
     `;
-    const batchRes = await client.query(batchQuery, [item_id, batch_number, expiry_date, quantity, purchase_price, sale_price]);
+    const batchRes = await client.query(batchQuery, [item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, req.user.id]);
     const batchId = batchRes.rows[0].id;
 
     // 2. Log transaction
     await client.query(
-      'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
-      [item_id, batchId, 'IN', quantity, 'Purchase Entry']
+      'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+      [item_id, batchId, 'IN', quantity, 'Purchase Entry', req.user.id]
     );
 
     await client.query('COMMIT');
@@ -1924,7 +1974,7 @@ app.post('/api/stock/purchase', async (req, res) => {
 });
 
 // FEFO Sale Implementation
-app.post('/api/stock/sell', async (req, res) => {
+app.post('/api/stock/sell', authenticateToken, async (req, res) => {
   const { item_id, quantity_to_sell, reason } = req.body;
   if (!item_id || !quantity_to_sell) return res.status(400).json({ error: 'Invalid data' });
 
@@ -1950,12 +2000,12 @@ app.post('/api/stock/sell', async (req, res) => {
       const takeFromThisBatch = Math.min(batch.quantity, remainingToSell);
       
       // Update batch quantity
-      await db.query('UPDATE stock_batches SET quantity = quantity - $1 WHERE id = $2', [takeFromThisBatch, batch.id]);
+      await db.query('UPDATE stock_batches SET quantity = quantity - $1, updated_by = $2 WHERE id = $3', [takeFromThisBatch, req.user.id, batch.id]);
       
       // Log transaction
       await db.query(
-        'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
-        [item_id, batch.id, 'OUT', -takeFromThisBatch, reason || 'Sale']
+        'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+        [item_id, batch.id, 'OUT', -takeFromThisBatch, reason || 'Sale', req.user.id]
       );
 
       remainingToSell -= takeFromThisBatch;
@@ -1969,7 +2019,7 @@ app.post('/api/stock/sell', async (req, res) => {
 });
 
 // Manual Stock Adjustment
-app.post('/api/stock/adjust', async (req, res) => {
+app.post('/api/stock/adjust', authenticateToken, async (req, res) => {
   const { item_id, adjustment_qty, reason, type } = req.body; // type: 'ADJUST'
   if (!item_id || !adjustment_qty) return res.status(400).json({ error: 'Invalid data' });
 
@@ -1982,14 +2032,14 @@ app.post('/api/stock/adjust', async (req, res) => {
     if (qty > 0) {
       // Increase: Create a dummy batch for adjustment (or add to latest)
       const batchRes = await client.query(`
-        INSERT INTO stock_batches (item_id, batch_number, quantity, purchase_price, sale_price)
-        VALUES ($1, $2, $3, (SELECT default_purchase_price FROM stock_items WHERE id = $1), (SELECT default_sale_price FROM stock_items WHERE id = $1))
+        INSERT INTO stock_batches (item_id, batch_number, quantity, purchase_price, sale_price, created_by)
+        VALUES ($1, $2, $3, (SELECT default_purchase_price FROM stock_items WHERE id = $1), (SELECT default_sale_price FROM stock_items WHERE id = $1), $4)
         RETURNING id
-      `, [item_id, 'ADJ-' + Date.now(), qty]);
+      `, [item_id, 'ADJ-' + Date.now(), qty, req.user.id]);
       
       await client.query(
-        'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
-        [item_id, batchRes.rows[0].id, 'ADJUST', qty, reason || 'Manual Correction (+)']
+        'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+        [item_id, batchRes.rows[0].id, 'ADJUST', qty, reason || 'Manual Correction (+)', req.user.id]
       );
     } else {
       // Decrease: Use FEFO logic to deduct
@@ -2002,10 +2052,10 @@ app.post('/api/stock/adjust', async (req, res) => {
       for (const batch of batchesRes.rows) {
         if (remainingToDeduct <= 0) break;
         const takeFromThisBatch = Math.min(batch.quantity, remainingToDeduct);
-        await client.query('UPDATE stock_batches SET quantity = quantity - $1 WHERE id = $2', [takeFromThisBatch, batch.id]);
+        await client.query('UPDATE stock_batches SET quantity = quantity - $1, updated_by = $2 WHERE id = $3', [takeFromThisBatch, req.user.id, batch.id]);
         await client.query(
-          'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
-          [item_id, batch.id, 'ADJUST', -takeFromThisBatch, reason || 'Manual Correction (-)']
+          'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+          [item_id, batch.id, 'ADJUST', -takeFromThisBatch, reason || 'Manual Correction (-)', req.user.id]
         );
         remainingToDeduct -= takeFromThisBatch;
       }
@@ -2029,7 +2079,7 @@ app.post('/api/stock/adjust', async (req, res) => {
 // --- Pricing Module Routes ---
 
 // GET: All items with pricing info
-app.get('/api/pricing/items', async (req, res) => {
+app.get('/api/pricing/items', authenticateToken, async (req, res) => {
   const { category_id, subcategory_id } = req.query;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
@@ -2094,7 +2144,7 @@ app.get('/api/pricing/items', async (req, res) => {
 });
 
 // PUT: Update pricing for a specific item
-app.put('/api/pricing/items/:id', async (req, res) => {
+app.put('/api/pricing/items/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   let { default_purchase_price, default_sale_price, pricing_method, markup_percentage } = req.body;
   
@@ -2115,11 +2165,12 @@ app.put('/api/pricing/items/:id', async (req, res) => {
         default_sale_price = $2,
         pricing_method = $3,
         markup_percentage = $4,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $5 AND is_active = true
+        updated_at = CURRENT_TIMESTAMP,
+        updated_by = $5
+      WHERE id = $6 AND is_active = true
       RETURNING *;
     `;
-    const values = [default_purchase_price || 0, default_sale_price || 0, pricing_method, markup_percentage || 0, id];
+    const values = [default_purchase_price || 0, default_sale_price || 0, pricing_method, markup_percentage || 0, req.user.id, id];
     const result = await db.query(query, values);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Item not found' });
@@ -2132,7 +2183,7 @@ app.put('/api/pricing/items/:id', async (req, res) => {
 });
 
 // GET: Export Pricing to CSV
-app.get('/api/pricing/export', async (req, res) => {
+app.get('/api/pricing/export', authenticateToken, async (req, res) => {
   try {
     const query = `
       SELECT 
@@ -2168,7 +2219,7 @@ app.get('/api/pricing/export', async (req, res) => {
 });
 
 // POST: Import Pricing from CSV
-app.post('/api/pricing/import', upload.single('file'), (req, res) => {
+app.post('/api/pricing/import', authenticateToken, upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -2209,10 +2260,11 @@ app.post('/api/pricing/import', upload.single('file'), (req, res) => {
               default_sale_price = $2,
               pricing_method = $3,
               markup_percentage = $4,
-              updated_at = CURRENT_TIMESTAMP
-            WHERE item_code = $5 AND is_active = true
+              updated_at = CURRENT_TIMESTAMP,
+              updated_by = $5
+            WHERE item_code = $6 AND is_active = true
             RETURNING id
-          `, [purchasePrice, salePrice, pricingMethod, markup, itemCode]);
+          `, [purchasePrice, salePrice, pricingMethod, markup, req.user.id, itemCode]);
           
           if (updateRes.rows.length > 0) {
              successCount++;
@@ -2230,7 +2282,7 @@ app.post('/api/pricing/import', upload.single('file'), (req, res) => {
 });
 
 // GET: Sample CSV for Import
-app.get('/api/pricing/sample', (req, res) => {
+app.get('/api/pricing/sample', authenticateToken, (req, res) => {
   const csvData = 'Item Code,Item Name,Category,Subcategory,Purchase Price,Sale Price,Pricing Method,Markup Percentage\n' +
     'ITM001,Example Medicine,Pharmacy,General Pharmacy,10.00,12.00,MARKUP_PERCENT,20\n' +
     'ITM002,Another Item,Pharmacy,Consumables,50.00,65.00,MANUAL,0\n';
@@ -2243,7 +2295,7 @@ app.get('/api/pricing/sample', (req, res) => {
 // --- GP Package Module Routes ---
 
 // GET: All packages with their items
-app.get('/api/gp-packages', async (req, res) => {
+app.get('/api/gp-packages', authenticateToken, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
@@ -2284,7 +2336,7 @@ app.get('/api/gp-packages', async (req, res) => {
 });
 
 // POST: Create a new GP package
-app.post('/api/gp-packages', async (req, res) => {
+app.post('/api/gp-packages', authenticateToken, async (req, res) => {
   const { name, price, items } = req.body; // items is an array of { item_id, quantity }
   
   if (!name || !price) {
@@ -2296,16 +2348,16 @@ app.post('/api/gp-packages', async (req, res) => {
     await client.query('BEGIN');
 
     const pkgRes = await client.query(
-      'INSERT INTO gp_packages (name, price) VALUES ($1, $2) RETURNING *',
-      [name, price]
+      'INSERT INTO gp_packages (name, price, created_by) VALUES ($1, $2, $3) RETURNING *',
+      [name, price, req.user.id]
     );
     const newPkg = pkgRes.rows[0];
 
     if (items && Array.isArray(items)) {
       for (let item of items) {
         await client.query(
-          'INSERT INTO gp_package_items (package_id, item_id, quantity) VALUES ($1, $2, $3)',
-          [newPkg.id, item.item_id, item.quantity]
+          'INSERT INTO gp_package_items (package_id, item_id, quantity, created_by) VALUES ($1, $2, $3, $4)',
+          [newPkg.id, item.item_id, item.quantity, req.user.id]
         );
       }
     }
@@ -2322,7 +2374,7 @@ app.post('/api/gp-packages', async (req, res) => {
 });
 
 // PUT: Update an existing GP package
-app.put('/api/gp-packages/:id', async (req, res) => {
+app.put('/api/gp-packages/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { name, price, items } = req.body;
 
@@ -2331,8 +2383,8 @@ app.put('/api/gp-packages/:id', async (req, res) => {
     await client.query('BEGIN');
 
     await client.query(
-      'UPDATE gp_packages SET name = $1, price = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
-      [name, price, id]
+      'UPDATE gp_packages SET name = $1, price = $2, updated_at = CURRENT_TIMESTAMP, updated_by = $3 WHERE id = $4',
+      [name, price, req.user.id, id]
     );
 
     // Simplest approach: Delete old items and insert new ones
@@ -2341,8 +2393,8 @@ app.put('/api/gp-packages/:id', async (req, res) => {
     if (items && Array.isArray(items)) {
       for (let item of items) {
         await client.query(
-          'INSERT INTO gp_package_items (package_id, item_id, quantity) VALUES ($1, $2, $3)',
-          [id, item.item_id, item.quantity]
+          'INSERT INTO gp_package_items (package_id, item_id, quantity, created_by) VALUES ($1, $2, $3, $4)',
+          [id, item.item_id, item.quantity, req.user.id]
         );
       }
     }
@@ -2359,10 +2411,10 @@ app.put('/api/gp-packages/:id', async (req, res) => {
 });
 
 // DELETE: Soft delete a GP package
-app.delete('/api/gp-packages/:id', async (req, res) => {
+app.delete('/api/gp-packages/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
-    await db.query('UPDATE gp_packages SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+    await db.query('UPDATE gp_packages SET is_active = false, updated_at = CURRENT_TIMESTAMP, updated_by = $1 WHERE id = $2', [req.user.id, id]);
     res.json({ message: 'Package deleted' });
   } catch (err) {
     console.error('GP Packages DELETE error:', err);
@@ -2373,7 +2425,7 @@ app.delete('/api/gp-packages/:id', async (req, res) => {
 // --- Billing & Voucher Module Routes ---
 
 // Helper for stock deduction (FEFO)
-const deductStock = async (client, itemId, quantityToDeduct, reason) => {
+const deductStock = async (client, itemId, quantityToDeduct, reason, userId) => {
   // 1. Check total stock
   const stockRes = await client.query('SELECT SUM(quantity) as total FROM stock_batches WHERE item_id = $1', [itemId]);
   const totalAvailable = parseInt(stockRes.rows[0].total) || 0;
@@ -2396,11 +2448,11 @@ const deductStock = async (client, itemId, quantityToDeduct, reason) => {
 
     const takeFromThisBatch = Math.min(batch.quantity, remainingToDeduct);
     
-    await client.query('UPDATE stock_batches SET quantity = quantity - $1 WHERE id = $2', [takeFromThisBatch, batch.id]);
+    await client.query('UPDATE stock_batches SET quantity = quantity - $1, updated_by = $2 WHERE id = $3', [takeFromThisBatch, userId, batch.id]);
     
     await client.query(
-      'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
-      [itemId, batch.id, 'OUT', -takeFromThisBatch, reason]
+      'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+      [itemId, batch.id, 'OUT', -takeFromThisBatch, reason, userId]
     );
 
     remainingToDeduct -= takeFromThisBatch;
@@ -2410,22 +2462,22 @@ const deductStock = async (client, itemId, quantityToDeduct, reason) => {
   if (remainingToDeduct > 0) {
     // Create or update a dummy batch for oversold items to keep track of negative stock
     const overSRes = await client.query(`
-      INSERT INTO stock_batches (item_id, batch_number, quantity, purchase_price, sale_price)
-      VALUES ($1, 'OVERSOLD', $2, (SELECT default_purchase_price FROM stock_items WHERE id = $1), (SELECT default_sale_price FROM stock_items WHERE id = $1))
+      INSERT INTO stock_batches (item_id, batch_number, quantity, purchase_price, sale_price, created_by)
+      VALUES ($1, 'OVERSOLD', $2, (SELECT default_purchase_price FROM stock_items WHERE id = $1), (SELECT default_sale_price FROM stock_items WHERE id = $1), $3)
       RETURNING id
-    `, [itemId, -remainingToDeduct]);
+    `, [itemId, -remainingToDeduct, userId]);
 
     const oversoldBatchId = overSRes.rows[0].id;
 
     await client.query(
-      'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
-      [itemId, oversoldBatchId, 'OUT', -remainingToDeduct, reason]
+      'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+      [itemId, oversoldBatchId, 'OUT', -remainingToDeduct, reason, userId]
     );
   }
 };
 
 // GET: All vouchers (paginated)
-app.get('/api/billing/vouchers', async (req, res) => {
+app.get('/api/billing/vouchers', authenticateToken, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
@@ -2457,7 +2509,7 @@ app.get('/api/billing/vouchers', async (req, res) => {
 });
 
 // GET: Single voucher details
-app.get('/api/billing/vouchers/:id', async (req, res) => {
+app.get('/api/billing/vouchers/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
     const voucherRes = await db.query(`
@@ -2495,7 +2547,7 @@ app.get('/api/billing/vouchers/:id', async (req, res) => {
 });
 
 // GET: All investigations for a specific laboratory
-app.get('/api/laboratories/:id/investigations', async (req, res) => {
+app.get('/api/laboratories/:id/investigations', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
     const result = await db.query(`
@@ -2516,7 +2568,7 @@ app.get('/api/laboratories/:id/investigations', async (req, res) => {
 });
 
 // GET: All investigations (with lab filtering)
-app.get('/api/investigations', async (req, res) => {
+app.get('/api/investigations', authenticateToken, async (req, res) => {
   const { laboratory_id, status } = req.query;
   try {
     let query = `
@@ -2546,7 +2598,7 @@ app.get('/api/investigations', async (req, res) => {
 });
 
 // PUT: Batch update investigation status
-app.put('/api/investigations/batch/status', async (req, res) => {
+app.put('/api/investigations/batch/status', authenticateToken, async (req, res) => {
   console.log('HIT: Batch update status');
   const { ids, status } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) {
@@ -2555,11 +2607,11 @@ app.put('/api/investigations/batch/status', async (req, res) => {
   try {
     const query = `
       UPDATE voucher_items
-      SET status = $1
-      WHERE id = ANY($2)
+      SET status = $1, updated_at = CURRENT_TIMESTAMP, updated_by = $2
+      WHERE id = ANY($3)
       RETURNING *
     `;
-    const result = await db.query(query, [status, ids]);
+    const result = await db.query(query, [status, req.user.id, ids]);
     res.json(result.rows);
   } catch (err) {
     console.error('BATCH UPDATE ERROR:', err);
@@ -2568,18 +2620,18 @@ app.put('/api/investigations/batch/status', async (req, res) => {
 });
 
 // PUT: Update investigation status
-app.put('/api/investigations/:id/status', async (req, res) => {
+app.put('/api/investigations/:id/status', authenticateToken, async (req, res) => {
   console.log('HIT: Single update status, id:', req.params.id);
   const { id } = req.params;
   const { status } = req.body;
   try {
     const query = `
       UPDATE voucher_items
-      SET status = $1
-      WHERE id = $2
+      SET status = $1, updated_at = CURRENT_TIMESTAMP, updated_by = $2
+      WHERE id = $3
       RETURNING *
     `;
-    const result = await db.query(query, [status, id]);
+    const result = await db.query(query, [status, req.user.id, id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Investigation not found' });
     }
@@ -2592,7 +2644,7 @@ app.put('/api/investigations/:id/status', async (req, res) => {
 // --- Laboratory Specific Test Pricing ---
 
 // GET: All investigation items with their pricing for a specific lab
-app.get('/api/laboratories/:id/test-pricing', async (req, res) => {
+app.get('/api/laboratories/:id/test-pricing', authenticateToken, async (req, res) => {
   const labId = req.params.id;
   try {
     const query = `
@@ -2616,22 +2668,23 @@ app.get('/api/laboratories/:id/test-pricing', async (req, res) => {
 });
 
 // POST: Update specific test pricing for a lab
-app.post('/api/laboratories/:id/test-pricing', async (req, res) => {
+app.post('/api/laboratories/:id/test-pricing', authenticateToken, async (req, res) => {
   const labId = req.params.id;
   const { item_id, purchase_price, commission_percentage } = req.body;
   
   try {
     const query = `
-      INSERT INTO laboratory_test_pricing (laboratory_id, item_id, purchase_price, commission_percentage, updated_at)
-      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+      INSERT INTO laboratory_test_pricing (laboratory_id, item_id, purchase_price, commission_percentage, updated_at, created_by)
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, $5)
       ON CONFLICT (laboratory_id, item_id) 
       DO UPDATE SET 
         purchase_price = EXCLUDED.purchase_price,
         commission_percentage = EXCLUDED.commission_percentage,
-        updated_at = CURRENT_TIMESTAMP
+        updated_at = CURRENT_TIMESTAMP,
+        updated_by = $5
       RETURNING *;
     `;
-    const result = await db.query(query, [labId, item_id, purchase_price, commission_percentage]);
+    const result = await db.query(query, [labId, item_id, purchase_price, commission_percentage, req.user.id]);
     res.json(result.rows[0]);
   } catch (err) {
     console.error('UPDATE LAB TEST PRICING ERROR:', err);
@@ -2640,7 +2693,7 @@ app.post('/api/laboratories/:id/test-pricing', async (req, res) => {
 });
 
 // GET: Laboratory Payments (Investigations filtered by lab, status, and date)
-app.get('/api/lab-payments', async (req, res) => {
+app.get('/api/lab-payments', authenticateToken, async (req, res) => {
   const { laboratory_id, payment_status, from_date, to_date } = req.query;
   
   let query = `
@@ -2688,7 +2741,7 @@ app.get('/api/lab-payments', async (req, res) => {
 });
 
 // POST: Bulk pay laboratories
-app.post('/api/lab-payments/bulk-pay', async (req, res) => {
+app.post('/api/lab-payments/bulk-pay', authenticateToken, async (req, res) => {
   const { ids } = req.body;
   if (!ids || !Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: 'No investigation IDs provided' });
@@ -2697,9 +2750,9 @@ app.post('/api/lab-payments/bulk-pay', async (req, res) => {
   try {
     await db.query(`
       UPDATE voucher_items 
-      SET lab_payment_status = 'Paid', lab_paid_at = CURRENT_TIMESTAMP 
-      WHERE id = ANY($1::int[])
-    `, [ids]);
+      SET lab_payment_status = 'Paid', lab_paid_at = CURRENT_TIMESTAMP, updated_by = $1
+      WHERE id = ANY($2::int[])
+    `, [req.user.id, ids]);
     res.json({ message: `${ids.length} investigations marked as paid to lab` });
   } catch (err) {
     console.error('BULK LAB PAY ERROR:', err);
@@ -2708,7 +2761,7 @@ app.post('/api/lab-payments/bulk-pay', async (req, res) => {
 });
 
 // POST: Upload investigation result
-app.post('/api/investigations/:id/upload', upload.single('file'), async (req, res) => {
+app.post('/api/investigations/:id/upload', authenticateToken, upload.single('file'), async (req, res) => {
   const { id } = req.params;
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -2718,11 +2771,11 @@ app.post('/api/investigations/:id/upload', upload.single('file'), async (req, re
     const filePath = req.file.filename;
     const query = `
       UPDATE voucher_items 
-      SET result_file_path = $1, status = 'COMPLETED' 
-      WHERE id = $2 
+      SET result_file_path = $1, status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP, updated_by = $2
+      WHERE id = $3 
       RETURNING *
     `;
-    const result = await db.query(query, [filePath, id]);
+    const result = await db.query(query, [filePath, req.user.id, id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Investigation not found' });
     }
@@ -2734,7 +2787,7 @@ app.post('/api/investigations/:id/upload', upload.single('file'), async (req, re
 });
 
 // POST: Create Voucher
-app.post('/api/billing/vouchers', async (req, res) => {
+app.post('/api/billing/vouchers', authenticateToken, async (req, res) => {
   const { 
     patient_id, physician_id, items, referrals, 
     total_amount, discount_amount, net_amount, 
@@ -2753,10 +2806,10 @@ app.post('/api/billing/vouchers', async (req, res) => {
 
     // 1. Insert Voucher
     const vRes = await client.query(`
-      INSERT INTO vouchers (voucher_number, patient_id, physician_id, total_amount, discount_amount, net_amount, payment_method, notes, tca_date)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO vouchers (voucher_number, patient_id, physician_id, total_amount, discount_amount, net_amount, payment_method, notes, tca_date, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING id
-    `, [voucher_number, patient_id, physician_id || null, total_amount, discount_amount, net_amount, payment_method, notes, tca_date || null]);
+    `, [voucher_number, patient_id, physician_id || null, total_amount, discount_amount, net_amount, payment_method, notes, tca_date || null, req.user.id]);
     const voucherId = vRes.rows[0].id;
 
     // 2. Insert Items & Deduct Stock
@@ -2797,18 +2850,18 @@ app.post('/api/billing/vouchers', async (req, res) => {
       }
 
       await client.query(`
-        INSERT INTO voucher_items (voucher_id, item_type, item_id, name, quantity, unit_price, subtotal, laboratory_id, lab_cost_price, lab_commission_pct, lab_payment_status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      `, [voucherId, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id || null, labCostPrice, labCommissionPct, labPaymentStatus]);
+        INSERT INTO voucher_items (voucher_id, item_type, item_id, name, quantity, unit_price, subtotal, laboratory_id, lab_cost_price, lab_commission_pct, lab_payment_status, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `, [voucherId, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id || null, labCostPrice, labCommissionPct, labPaymentStatus, req.user.id]);
 
       if (item.item_type === 'PHARMACY') {
-        await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`);
+        await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`, req.user.id);
       } else if (item.item_type === 'PACKAGE') {
         // Find package components
         const pkgItems = await client.query('SELECT * FROM gp_package_items WHERE package_id = $1 AND is_active = true', [item.item_id]);
         for (const pi of pkgItems.rows) {
           const totalQty = pi.quantity * item.quantity;
-          await deductStock(client, pi.item_id, totalQty, `Voucher Package ${item.name} (${voucher_number})`);
+          await deductStock(client, pi.item_id, totalQty, `Voucher Package ${item.name} (${voucher_number})`, req.user.id);
         }
       }
     }
@@ -2817,9 +2870,9 @@ app.post('/api/billing/vouchers', async (req, res) => {
     if (referrals && Array.isArray(referrals)) {
       for (const ref of referrals) {
         await client.query(`
-          INSERT INTO voucher_referrals (voucher_id, referred_person_id, referral_type, percentage, amount)
-          VALUES ($1, $2, $3, $4, $5)
-        `, [voucherId, ref.referred_person_id, ref.referral_type, ref.percentage, ref.amount]);
+          INSERT INTO voucher_referrals (voucher_id, referred_person_id, referral_type, percentage, amount, created_by)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [voucherId, ref.referred_person_id, ref.referral_type, ref.percentage, ref.amount, req.user.id]);
       }
     }
 
@@ -2835,7 +2888,7 @@ app.post('/api/billing/vouchers', async (req, res) => {
 });
 
 // GET: All referrals (with filters)
-app.get('/api/billing/referrals', async (req, res) => {
+app.get('/api/billing/referrals', authenticateToken, async (req, res) => {
   const { referred_person_id, from_date, to_date, payment_status } = req.query;
   
   let query = `
@@ -2879,14 +2932,14 @@ app.get('/api/billing/referrals', async (req, res) => {
 });
 
 // POST: Mark referral as paid
-app.post('/api/billing/referrals/:id/pay', async (req, res) => {
+app.post('/api/billing/referrals/:id/pay', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
     await db.query(`
       UPDATE voucher_referrals 
-      SET payment_status = 'Paid', paid_at = CURRENT_TIMESTAMP 
-      WHERE id = $1
-    `, [id]);
+      SET payment_status = 'Paid', paid_at = CURRENT_TIMESTAMP, updated_by = $1
+      WHERE id = $2
+    `, [req.user.id, id]);
     res.json({ message: 'Referral marked as paid' });
   } catch (err) {
     console.error('PAY REFERRAL ERROR:', err);
@@ -2895,7 +2948,7 @@ app.post('/api/billing/referrals/:id/pay', async (req, res) => {
 });
 
 // POST: Mark multiple referrals as paid
-app.post('/api/billing/referrals/bulk-pay', async (req, res) => {
+app.post('/api/billing/referrals/bulk-pay', authenticateToken, async (req, res) => {
   const { ids } = req.body;
   if (!ids || !Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: 'No referral IDs provided' });
@@ -2905,9 +2958,9 @@ app.post('/api/billing/referrals/bulk-pay', async (req, res) => {
     // using ANY($1::int[]) is standard for arrays in pg
     await db.query(`
       UPDATE voucher_referrals 
-      SET payment_status = 'Paid', paid_at = CURRENT_TIMESTAMP 
-      WHERE id = ANY($1::int[])
-    `, [ids]);
+      SET payment_status = 'Paid', paid_at = CURRENT_TIMESTAMP, updated_by = $1
+      WHERE id = ANY($2::int[])
+    `, [req.user.id, ids]);
     res.json({ message: `${ids.length} referrals marked as paid` });
   } catch (err) {
     console.error('BULK PAY REFERRALS ERROR:', err);
@@ -2918,7 +2971,7 @@ app.post('/api/billing/referrals/bulk-pay', async (req, res) => {
 // --- Purchases Module Routes ---
 
 // GET: All purchases (paginated)
-app.get('/api/purchases', async (req, res) => {
+app.get('/api/purchases', authenticateToken, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
@@ -2949,7 +3002,7 @@ app.get('/api/purchases', async (req, res) => {
 });
 
 // GET: Single purchase details
-app.get('/api/purchases/:id', async (req, res) => {
+app.get('/api/purchases/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
     const purchaseRes = await db.query(`
@@ -2978,7 +3031,7 @@ app.get('/api/purchases/:id', async (req, res) => {
 });
 
 // POST: Create Purchase Invoice
-app.post('/api/purchases', async (req, res) => {
+app.post('/api/purchases', authenticateToken, async (req, res) => {
   const { 
     supplier_id, items, 
     total_amount, paid_amount, balance_amount, 
@@ -2996,33 +3049,33 @@ app.post('/api/purchases', async (req, res) => {
 
     // 1. Insert Purchase Record
     const pRes = await client.query(`
-      INSERT INTO purchases (invoice_number, supplier_id, total_amount, paid_amount, balance_amount, payment_method, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO purchases (invoice_number, supplier_id, total_amount, paid_amount, balance_amount, payment_method, notes, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING id
-    `, [invoice_number, supplier_id, total_amount, paid_amount, balance_amount, payment_method, notes]);
+    `, [invoice_number, supplier_id, total_amount, paid_amount, balance_amount, payment_method, notes, req.user.id]);
     const purchaseId = pRes.rows[0].id;
 
     // 2. Insert Items & Update Stock
     for (const item of items) {
       // Create purchase item record
       await client.query(`
-        INSERT INTO purchase_items (purchase_id, item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, subtotal)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      `, [purchaseId, item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, item.subtotal]);
+        INSERT INTO purchase_items (purchase_id, item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, subtotal, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [purchaseId, item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, item.subtotal, req.user.id]);
 
       // Create stock batch for FEFO tracking
       const batchQuery = `
-        INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id;
       `;
-      const batchRes = await client.query(batchQuery, [item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price]);
+      const batchRes = await client.query(batchQuery, [item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, req.user.id]);
       const batchId = batchRes.rows[0].id;
 
       // Log transaction
       await client.query(
-        'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)',
-        [item.item_id, batchId, 'IN', item.quantity, `Purchase Invoice ${invoice_number}`]
+        'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+        [item.item_id, batchId, 'IN', item.quantity, `Purchase Invoice ${invoice_number}`, req.user.id]
       );
     }
 
@@ -3040,7 +3093,7 @@ app.post('/api/purchases', async (req, res) => {
 // --- New Dedicated Financial Reporting APIs ---
 
 // GET: Detailed Revenue for Accounting & Cashiers
-app.get('/api/reports/detailed-revenue', async (req, res) => {
+app.get('/api/reports/detailed-revenue', authenticateToken, async (req, res) => {
   const { start_date, end_date } = req.query;
   const start = start_date || new Date().toISOString().split('T')[0];
   const end = (end_date || start) + ' 23:59:59';
@@ -3111,7 +3164,7 @@ app.get('/api/reports/detailed-revenue', async (req, res) => {
 // --- Patient Clinical Notes Routes ---
 
 // GET: All clinical notes for a patient
-app.get('/api/patients/:id/clinical-notes', async (req, res) => {
+app.get('/api/patients/:id/clinical-notes', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
     const result = await db.query(`
@@ -3127,14 +3180,14 @@ app.get('/api/patients/:id/clinical-notes', async (req, res) => {
 });
 
 // POST: Add a new clinical note for a patient
-app.post('/api/patients/:id/clinical-notes', async (req, res) => {
+app.post('/api/patients/:id/clinical-notes', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { record_date, diagnosis, treatment, ongoing_plan } = req.body;
   
   try {
     const query = `
-      INSERT INTO patient_clinical_notes (patient_id, record_date, diagnosis, treatment, ongoing_plan)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO patient_clinical_notes (patient_id, record_date, diagnosis, treatment, ongoing_plan, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *;
     `;
     const result = await db.query(query, [
@@ -3142,7 +3195,8 @@ app.post('/api/patients/:id/clinical-notes', async (req, res) => {
       record_date || new Date().toISOString().split('T')[0], 
       diagnosis, 
       treatment, 
-      ongoing_plan
+      ongoing_plan,
+      req.user.id
     ]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -3152,17 +3206,17 @@ app.post('/api/patients/:id/clinical-notes', async (req, res) => {
 });
 
 // PUT: Update a clinical note
-app.put('/api/patients/clinical-notes/:id', async (req, res) => {
+app.put('/api/patients/clinical-notes/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { record_date, diagnosis, treatment, ongoing_plan } = req.body;
   try {
     const query = `
       UPDATE patient_clinical_notes 
-      SET record_date = $1, diagnosis = $2, treatment = $3, ongoing_plan = $4, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $5
+      SET record_date = $1, diagnosis = $2, treatment = $3, ongoing_plan = $4, updated_at = CURRENT_TIMESTAMP, updated_by = $5
+      WHERE id = $6 AND is_active = true
       RETURNING *;
     `;
-    const result = await db.query(query, [record_date, diagnosis, treatment, ongoing_plan, id]);
+    const result = await db.query(query, [record_date, diagnosis, treatment, ongoing_plan, req.user.id, id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Note not found' });
     res.json(result.rows[0]);
   } catch (err) {
@@ -3172,10 +3226,10 @@ app.put('/api/patients/clinical-notes/:id', async (req, res) => {
 });
 
 // DELETE: Remove a clinical note
-app.delete('/api/patients/clinical-notes/:id', async (req, res) => {
+app.delete('/api/patients/clinical-notes/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await db.query('DELETE FROM patient_clinical_notes WHERE id = $1 RETURNING id', [id]);
+    const result = await db.query('UPDATE patient_clinical_notes SET is_active = false, updated_at = CURRENT_TIMESTAMP, updated_by = $1 WHERE id = $2 RETURNING id', [req.user.id, id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Note not found' });
     res.json({ message: 'Note deleted successfully' });
   } catch (err) {
@@ -3184,9 +3238,264 @@ app.delete('/api/patients/clinical-notes/:id', async (req, res) => {
   }
 });
 
+// --- Authentication & User Management Routes ---
+
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const result = await db.query(
+      'SELECT u.*, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.username = $1 AND u.is_active = true',
+      [username]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    const user = result.rows[0];
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role_name },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    // Update last login
+    await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role_name
+      }
+    });
+  } catch (err) {
+    console.error('LOGIN ERROR:', err);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT u.id, u.username, u.email, r.name as role, 
+       ARRAY(SELECT permission_name FROM role_permissions WHERE role_id = u.role_id) as permissions
+       FROM users u 
+       JOIN roles r ON u.role_id = r.id 
+       WHERE u.id = $1`,
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('AUTH ME ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch user info' });
+  }
+});
+
+app.get('/api/auth/roles', authenticateToken, authorize(['manage_users']), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT r.id, r.name, r.description,
+      COALESCE(json_agg(rp.permission_name) FILTER (WHERE rp.permission_name IS NOT NULL), '[]') as permissions
+      FROM roles r
+      LEFT JOIN role_permissions rp ON r.id = rp.role_id
+      GROUP BY r.id
+      ORDER BY r.name ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('FETCH ROLES ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch roles' });
+  }
+});
+
+app.post('/api/auth/roles', authenticateToken, authorize(['manage_users']), async (req, res) => {
+  const { name, description, permissions } = req.body;
+  
+  if (!name) return res.status(400).json({ error: 'Role name is required' });
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Insert Role
+    const roleRes = await client.query(
+      'INSERT INTO roles (name, description) VALUES ($1, $2) RETURNING *',
+      [name, description || '']
+    );
+    const roleId = roleRes.rows[0].id;
+
+    // 2. Insert Permissions
+    if (permissions && Array.isArray(permissions) && permissions.length > 0) {
+      const values = permissions.map(p => `(${roleId}, '${p}')`).join(', ');
+      await client.query(`INSERT INTO role_permissions (role_id, permission_name) VALUES ${values}`);
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ ...roleRes.rows[0], permissions: permissions || [] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('CREATE ROLE ERROR:', err);
+    res.status(500).json({ error: 'Failed to create role' });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/api/auth/roles/:id', authenticateToken, authorize(['manage_users']), async (req, res) => {
+  const { id } = req.params;
+  const { name, description, permissions } = req.body;
+
+  // Prevent editing the core Admin role
+  if (parseInt(id) === 1) {
+    return res.status(403).json({ error: 'Cannot modify the system Admin role' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Update Role
+    const roleRes = await client.query(
+      'UPDATE roles SET name = $1, description = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
+      [name, description, id]
+    );
+
+    if (roleRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Role not found' });
+    }
+
+    // 2. Update Permissions (Delete all existing, then insert new)
+    await client.query('DELETE FROM role_permissions WHERE role_id = $1', [id]);
+    
+    if (permissions && Array.isArray(permissions) && permissions.length > 0) {
+      const values = permissions.map(p => `(${id}, '${p}')`).join(', ');
+      await client.query(`INSERT INTO role_permissions (role_id, permission_name) VALUES ${values}`);
+    }
+
+    await client.query('COMMIT');
+    res.json({ ...roleRes.rows[0], permissions: permissions || [] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('UPDATE ROLE ERROR:', err);
+    res.status(500).json({ error: 'Failed to update role' });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/auth/roles/:id', authenticateToken, authorize(['manage_users']), async (req, res) => {
+  const { id } = req.params;
+
+  // Prevent deleting the core Admin role
+  if (parseInt(id) === 1) {
+    return res.status(403).json({ error: 'Cannot delete the system Admin role' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Check if users are assigned to this role
+    const usersRes = await client.query('SELECT count(*) FROM users WHERE role_id = $1', [id]);
+    if (parseInt(usersRes.rows[0].count) > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Cannot delete role because it is assigned to existing users. Reassign them first.' });
+    }
+
+    await client.query('DELETE FROM role_permissions WHERE role_id = $1', [id]);
+    const delRes = await client.query('DELETE FROM roles WHERE id = $1 RETURNING id', [id]);
+
+    if (delRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Role not found' });
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Role deleted successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE ROLE ERROR:', err);
+    res.status(500).json({ error: 'Failed to delete role' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/auth/register', authenticateToken, authorize(['manage_users']), async (req, res) => {
+  const { username, password, email, role_id } = req.body;
+  try {
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(password, salt);
+
+    const result = await db.query(
+      'INSERT INTO users (username, password_hash, email, role_id, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email',
+      [username, password_hash, email, role_id, req.user.id]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('REGISTER ERROR:', err);
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+app.get('/api/users', authenticateToken, authorize(['manage_users']), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT u.id, u.username, u.email, u.is_active, u.last_login, r.name as role_name, u.role_id
+      FROM users u
+      JOIN roles r ON u.role_id = r.id
+      ORDER BY u.username ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+app.put('/api/users/:id', authenticateToken, authorize(['manage_users']), async (req, res) => {
+  const { id } = req.params;
+  const { username, email, role_id, is_active, password } = req.body;
+  
+  try {
+    let query = 'UPDATE users SET username = $1, email = $2, role_id = $3, is_active = $4, updated_by = $5, updated_at = CURRENT_TIMESTAMP';
+    const params = [username, email, role_id, is_active, req.user.id];
+
+    if (password) {
+      const salt = await bcrypt.genSalt(10);
+      const password_hash = await bcrypt.hash(password, salt);
+      query += ', password_hash = $6';
+      params.push(password_hash);
+    }
+
+    query += ' WHERE id = $' + (params.length + 1) + ' RETURNING id, username, email';
+    params.push(id);
+
+    const result = await db.query(query, params);
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('USER UPDATE ERROR:', err);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
 // --- Notifications API ---
 
-app.get('/api/notifications/alerts', async (req, res) => {
+app.get('/api/notifications/alerts', authenticateToken, async (req, res) => {
   try {
     const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const today = new Date();

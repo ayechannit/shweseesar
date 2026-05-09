@@ -1,5 +1,12 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/Auth/ProtectedRoute';
+import Login from './pages/Auth/Login';
+import Unauthorized from './pages/Auth/Unauthorized';
+import UserManagement from './pages/Auth/UserManagement';
+import RoleManagement from './pages/Auth/RoleManagement';
+
 import DashboardLayout from './components/Layout/DashboardLayout';
 import MasterDataPage from './pages/MasterData/MasterDataPage';
 import ReceptionDashboard from './pages/Reception/ReceptionDashboard';
@@ -24,53 +31,62 @@ import StockBalanceReport from './pages/Reports/StockBalanceReport';
 
 import ClinicReferralTransaction from './pages/Referral/ClinicReferralTransaction';
 import VoucherSettings from './pages/MasterData/VoucherSettings';
-import TcaDashboard from './pages/Tca/TcaDashboard';
+import PatientDashboard from './pages/Tca/TcaDashboard';
 
 function App() {
-  console.log('App rendering, current location:', window.location.pathname);
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<DashboardLayout />}>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<ExecutiveDashboard />} />
-          <Route path="/tca-dashboard" element={<TcaDashboard />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/revenue-dashboard" element={<DetailedRevenueReport />} />
-          <Route path="/lab-dashboard" element={<LaboratoryDashboard />} />
-          <Route path="/inventory-dashboard" element={<InventoryDashboard />} />
-          <Route path="/stock-balance-report" element={<StockBalanceReport />} />
-          <Route path="/purchase-dashboard" element={<PurchaseDashboard />} />
-          <Route path="/referral-dashboard" element={<ReferralDashboard />} />
-          <Route path="/external-referral-dashboard" element={<ExternalReferralDashboard />} />
-          <Route path="/reception" element={<ReceptionDashboard />} />
-          <Route path="/purchases" element={<PurchaseManagement />} />
-          <Route path="/stock" element={<StockManagement />} />
-          <Route path="/pricing" element={<PricingManagement />} />
-          <Route path="/gp-packages" element={<GPPackageManagement />} />
-          <Route path="/billing" element={<BillingPage />} />
-          <Route path="/referral-payments" element={<ReferralPaymentManagement />} />
-          <Route path="/clinic-referral-transactions" element={<ClinicReferralTransaction />} />
-          <Route path="/lab-payments" element={<LabPaymentManagement />} />
-          <Route path="/lab-pricing" element={<LabTestPricing />} />
-          <Route path="/laboratory-investigations" element={<LaboratoryManagement />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/revenue-dashboard" element={<DetailedRevenueReport />} />
-          <Route path="/voucher-settings" element={<VoucherSettings />} />
-          <Route path="/patients" element={<MasterDataPage type="patients" />} />
-          <Route path="/physicians" element={<MasterDataPage type="physicians" />} />
-          <Route path="/medical_officers" element={<MasterDataPage type="medical_officers" />} />
-          <Route path="/nurses" element={<MasterDataPage type="nurses" />} />
-          <Route path="/suppliers" element={<MasterDataPage type="suppliers" />} />
-          <Route path="/referred_persons" element={<MasterDataPage type="referred_persons" />} />
-          <Route path="/item_categories" element={<MasterDataPage type="item_categories" />} />
-          <Route path="/item_subcategories" element={<MasterDataPage type="item_subcategories" />} />
-          <Route path="/laboratories" element={<MasterDataPage type="laboratories" />} />
-          <Route path="/refer_clinics" element={<MasterDataPage type="refer_clinics" />} />
-          <Route path="*" element={<Navigate to="/reception" replace />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/unauthorized" element={<Unauthorized />} />
+          
+          <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+            <Route path="/" element={<Navigate to="/reception" replace />} />
+            <Route path="/dashboard" element={<ProtectedRoute requiredPermission="access_dashboard"><ExecutiveDashboard /></ProtectedRoute>} />
+            <Route path="/reception" element={<ProtectedRoute requiredPermission="access_reception"><ReceptionDashboard /></ProtectedRoute>} />
+            <Route path="/billing" element={<ProtectedRoute requiredPermission="access_billing"><BillingPage /></ProtectedRoute>} />
+            <Route path="/referral-payments" element={<ProtectedRoute requiredPermission="access_referral_payouts"><ReferralPaymentManagement /></ProtectedRoute>} />
+            <Route path="/clinic-referral-transactions" element={<ProtectedRoute requiredPermission="access_clinic_referrals"><ClinicReferralTransaction /></ProtectedRoute>} />
+            
+            <Route path="/stock" element={<ProtectedRoute requiredPermission="access_inventory"><StockManagement /></ProtectedRoute>} />
+            <Route path="/purchases" element={<ProtectedRoute requiredPermission="access_purchases"><PurchaseManagement /></ProtectedRoute>} />
+            <Route path="/pricing" element={<ProtectedRoute requiredPermission="access_price_list"><PricingManagement /></ProtectedRoute>} />
+            <Route path="/gp-packages" element={<ProtectedRoute requiredPermission="access_gp_packages"><GPPackageManagement /></ProtectedRoute>} />
+            <Route path="/laboratory-investigations" element={<ProtectedRoute requiredPermission="access_laboratory"><LaboratoryManagement /></ProtectedRoute>} />
+            <Route path="/lab-pricing" element={<ProtectedRoute requiredPermission="access_lab_pricing"><LabTestPricing /></ProtectedRoute>} />
+            
+            <Route path="/tca-dashboard" element={<ProtectedRoute requiredPermission="access_tca_dashboard"><PatientDashboard /></ProtectedRoute>} />
+            <Route path="/reports" element={<ProtectedRoute requiredPermission="access_reports_center"><ReportsPage /></ProtectedRoute>} />
+            <Route path="/revenue-dashboard" element={<ProtectedRoute requiredPermission="access_revenue_dashboard"><DetailedRevenueReport /></ProtectedRoute>} />
+            <Route path="/referral-dashboard" element={<ProtectedRoute requiredPermission="access_referral_dashboard"><ReferralDashboard /></ProtectedRoute>} />
+            <Route path="/external-referral-dashboard" element={<ProtectedRoute requiredPermission="access_ext_referral_dashboard"><ExternalReferralDashboard /></ProtectedRoute>} />
+            <Route path="/lab-dashboard" element={<ProtectedRoute requiredPermission="access_lab_dashboard"><LaboratoryDashboard /></ProtectedRoute>} />
+            <Route path="/inventory-dashboard" element={<ProtectedRoute requiredPermission="access_inventory_dashboard"><InventoryDashboard /></ProtectedRoute>} />
+            <Route path="/stock-balance-report" element={<ProtectedRoute requiredPermission="access_stock_balance_report"><StockBalanceReport /></ProtectedRoute>} />
+            <Route path="/purchase-dashboard" element={<ProtectedRoute requiredPermission="access_purchase_dashboard"><PurchaseDashboard /></ProtectedRoute>} />
+            <Route path="/lab-payments" element={<ProtectedRoute requiredPermission="access_lab_payouts"><LabPaymentManagement /></ProtectedRoute>} />
+            
+            <Route path="/voucher-settings" element={<ProtectedRoute requiredPermission="access_voucher_settings"><VoucherSettings /></ProtectedRoute>} />
+            <Route path="/users" element={<ProtectedRoute requiredPermission="manage_users"><UserManagement /></ProtectedRoute>} />
+            <Route path="/roles" element={<ProtectedRoute requiredPermission="manage_users"><RoleManagement /></ProtectedRoute>} />
+            
+            <Route path="/patients" element={<ProtectedRoute requiredPermission="access_master_patients"><MasterDataPage type="patients" /></ProtectedRoute>} />
+            <Route path="/physicians" element={<ProtectedRoute requiredPermission="access_master_physicians"><MasterDataPage type="physicians" /></ProtectedRoute>} />
+            <Route path="/medical_officers" element={<ProtectedRoute requiredPermission="access_master_mo"><MasterDataPage type="medical_officers" /></ProtectedRoute>} />
+            <Route path="/nurses" element={<ProtectedRoute requiredPermission="access_master_nurses"><MasterDataPage type="nurses" /></ProtectedRoute>} />
+            <Route path="/suppliers" element={<ProtectedRoute requiredPermission="access_master_suppliers"><MasterDataPage type="suppliers" /></ProtectedRoute>} />
+            <Route path="/referred_persons" element={<ProtectedRoute requiredPermission="access_master_referrers"><MasterDataPage type="referred_persons" /></ProtectedRoute>} />
+            <Route path="/item_categories" element={<ProtectedRoute requiredPermission="access_master_categories"><MasterDataPage type="item_categories" /></ProtectedRoute>} />
+            <Route path="/item_subcategories" element={<ProtectedRoute requiredPermission="access_master_subcategories"><MasterDataPage type="item_subcategories" /></ProtectedRoute>} />
+            <Route path="/laboratories" element={<ProtectedRoute requiredPermission="access_master_laboratories"><MasterDataPage type="laboratories" /></ProtectedRoute>} />
+            <Route path="/refer_clinics" element={<ProtectedRoute requiredPermission="access_master_refer_clinics"><MasterDataPage type="refer_clinics" /></ProtectedRoute>} />
+            
+            <Route path="*" element={<Navigate to="/reception" replace />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

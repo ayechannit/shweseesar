@@ -5,7 +5,7 @@ import {
   ChevronRight, ArrowRight, Target, Zap, FlaskConical, DollarSign, Percent
 } from 'lucide-react';
 
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function LaboratoryDashboard() {
   const [data, setData] = useState(null);
@@ -25,7 +25,7 @@ export default function LaboratoryDashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/dashboard/laboratory?startDate=${startDate}&endDate=${endDate}`);
+      const res = await apiRequest(`/dashboard/laboratory?startDate=${startDate}&endDate=${endDate}`);
       const result = await res.json();
       setData(result);
     } catch (err) {

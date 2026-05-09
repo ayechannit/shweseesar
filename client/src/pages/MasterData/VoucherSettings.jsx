@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Image as ImageIcon, CheckCircle } from 'lucide-react';
 
+import apiRequest from '../../utils/api';
 import { API_BASE } from '../../config';
 
 export default function VoucherSettings() {
@@ -27,7 +28,7 @@ export default function VoucherSettings() {
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch(`${API_BASE}/settings/voucher`);
+      const res = await apiRequest('/settings/voucher');
       if (res.ok) {
         const data = await res.json();
         setFormData({
@@ -83,7 +84,7 @@ export default function VoucherSettings() {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/settings/voucher`, {
+      const res = await apiRequest('/settings/voucher', {
         method: 'PUT',
         body: submitData
       });

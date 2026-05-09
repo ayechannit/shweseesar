@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Trash2, Save, X, User, Package, Monitor, UserPlus, Calculator, Receipt, CreditCard, ChevronRight, AlertCircle, Calendar } from 'lucide-react';
 import AddPatientModal from '../../components/Modals/AddPatientModal';
-
 import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function VoucherEntry({ onSave, onCancel }) {
   // --- Master Data ---
@@ -59,12 +59,12 @@ export default function VoucherEntry({ onSave, onCancel }) {
   const fetchMasterData = async () => {
     try {
       const [pRes, dRes, sRes, gRes, lRes, rRes] = await Promise.all([
-        fetch(`${API_BASE}/master-data/patients?limit=1000`),
-        fetch(`${API_BASE}/master-data/physicians?limit=200`),
-        fetch(`${API_BASE}/stock/items?limit=1000`),
-        fetch(`${API_BASE}/gp-packages?limit=100`),
-        fetch(`${API_BASE}/master-data/laboratories?limit=100`),
-        fetch(`${API_BASE}/master-data/referred_persons?limit=200`)
+        apiRequest('/master-data/patients?limit=1000'),
+        apiRequest('/master-data/physicians?limit=200'),
+        apiRequest('/stock/items?limit=1000'),
+        apiRequest('/gp-packages?limit=100'),
+        apiRequest('/master-data/laboratories?limit=100'),
+        apiRequest('/master-data/referred_persons?limit=200')
       ]);
       
       const pData = await pRes.json();
@@ -151,13 +151,15 @@ export default function VoucherEntry({ onSave, onCancel }) {
     // Logic for Lab-Specific Pricing
     if (field === 'laboratory_id' && value && newItems[index].item_type === 'INVESTIGATION') {
       try {
-        const res = await fetch(`${API_BASE}/laboratories/${value}/test-pricing`);
-        const pricingData = await res.json();
-        // Find the specific pricing for this item
-        const specific = pricingData.find(p => String(p.item_id) === String(newItems[index].item_id));
-        if (specific) {
-           newItems[index].lab_cost_price = specific.purchase_price;
-           newItems[index].lab_commission_pct = specific.commission_percentage;
+        const res = await apiRequest(`/laboratories/${value}/test-pricing`);
+        if (res && res.ok) {
+          const pricingData = await res.json();
+          // Find the specific pricing for this item
+          const specific = pricingData.find(p => String(p.item_id) === String(newItems[index].item_id));
+          if (specific) {
+             newItems[index].lab_cost_price = specific.purchase_price;
+             newItems[index].lab_commission_pct = specific.commission_percentage;
+          }
         }
       } catch (err) {
         console.error('Failed to fetch specific lab pricing:', err);
@@ -217,9 +219,8 @@ export default function VoucherEntry({ onSave, onCancel }) {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/billing/vouchers`, {
+      const res = await apiRequest('/billing/vouchers', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           patient_id: selectedPatient.id,
           physician_id: selectedPhysicianId || null,
@@ -234,10 +235,10 @@ export default function VoucherEntry({ onSave, onCancel }) {
         })
       });
 
-      if (res.ok) {
+      if (res && res.ok) {
         const data = await res.json();
         onSave(data.id);
-      } else {
+      } else if (res) {
         const err = await res.json();
         alert(err.error || 'Failed to create voucher');
       }

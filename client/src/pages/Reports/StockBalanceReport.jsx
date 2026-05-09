@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Search, Download, Printer, Filter } from 'lucide-react';
 
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function StockBalanceReport() {
   const [items, setItems] = useState([]);
@@ -16,7 +16,7 @@ export default function StockBalanceReport() {
     setLoading(true);
     try {
       // Fetching with a high limit to get a comprehensive report
-      const res = await fetch(`${API_BASE}/stock/items?limit=5000`);
+      const res = await apiRequest('/stock/items?limit=5000');
       if (res.ok) {
         const data = await res.json();
         setItems(data.data || []);

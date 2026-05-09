@@ -4,30 +4,42 @@ import {
   Users, UserPlus, Stethoscope, HeartPulse, Truck, Share2, 
   Menu, X, Database, ChevronDown, ChevronRight, Monitor, 
   Package, Tags, FileText, FlaskConical, DollarSign, 
-  LayoutDashboard, BarChart3, Settings, Bell, Search, ShoppingBag, Layout, CreditCard, Percent, TrendingUp, Activity, ShoppingCart, Calendar
+  LayoutDashboard, BarChart3, Settings, Bell, Search, ShoppingBag, Layout, CreditCard, Percent, TrendingUp, Activity, ShoppingCart, Calendar, LogOut, UserCog, User
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 const masterDataLinks = [
-  { path: '/patients', label: 'Patients', icon: Users },
-  { path: '/physicians', label: 'Physicians', icon: Stethoscope },
-  { path: '/medical_officers', label: 'Medical Officers', icon: UserPlus },
-  { path: '/nurses', label: 'Nurses', icon: HeartPulse },
-  { path: '/suppliers', label: 'Suppliers', icon: Truck },
-  { path: '/referred_persons', label: 'Referred Persons', icon: Share2 },
-  { path: '/laboratories', label: 'Laboratories', icon: FlaskConical },
-  { path: '/refer_clinics', label: 'Refer Clinics', icon: Monitor },
-  { path: '/voucher-settings', label: 'Voucher Settings', icon: Settings },
+  { path: '/patients', label: 'Patients', icon: Users, permission: 'access_master_patients' },
+  { path: '/physicians', label: 'Physicians', icon: Stethoscope, permission: 'access_master_physicians' },
+  { path: '/medical_officers', label: 'Medical Officers', icon: UserPlus, permission: 'access_master_mo' },
+  { path: '/nurses', label: 'Nurses', icon: HeartPulse, permission: 'access_master_nurses' },
+  { path: '/suppliers', label: 'Suppliers', icon: Truck, permission: 'access_master_suppliers' },
+  { path: '/referred_persons', label: 'Referred Persons', icon: Share2, permission: 'access_master_referrers' },
+  { path: '/laboratories', label: 'Laboratories', icon: FlaskConical, permission: 'access_master_laboratories' },
+  { path: '/refer_clinics', label: 'Refer Clinics', icon: Monitor, permission: 'access_master_refer_clinics' },
+  { path: '/voucher-settings', label: 'Voucher Settings', icon: Settings, permission: 'access_voucher_settings' },
 ];
-
-import { API_BASE } from '../../config';
 
 export default function DashboardLayout() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [isMasterDataOpen, setIsMasterDataOpen] = useState(false);
+  const { user, logout, hasPermission } = useAuth();
   
   const navigate = useNavigate();
 
   const toggleDrawer = () => setIsDrawerOpen(!isDrawerOpen);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const isAdmin = user?.role === 'Admin';
+
+  const renderSidebarLink = (to, icon, label, permission) => {
+    if (!isAdmin && permission && !hasPermission(permission)) return null;
+    return <SidebarLink to={to} icon={icon} label={label} onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />;
+  };
 
   return (
     <div className="app-container">
@@ -44,38 +56,45 @@ export default function DashboardLayout() {
         <nav className="sidebar-nav-modern">
           <div className="nav-section">
             <span className="section-label">Main Menu</span>
-            <SidebarLink to="/dashboard" icon={<LayoutDashboard size={20} />} label="Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/reception" icon={<Monitor size={20} />} label="Reception" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/billing" icon={<FileText size={20} />} label="Billing" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/referral-payments" icon={<DollarSign size={20} />} label="Referral Payouts" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/clinic-referral-transactions" icon={<Share2 size={20} />} label="Clinic Referrals" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            {renderSidebarLink('/dashboard', <LayoutDashboard size={20} />, 'Dashboard', 'access_dashboard')}
+            {renderSidebarLink('/reception', <Monitor size={20} />, 'Reception', 'access_reception')}
+            {renderSidebarLink('/billing', <FileText size={20} />, 'Billing', 'access_billing')}
+            {renderSidebarLink('/referral-payments', <DollarSign size={20} />, 'Referral Payouts', 'access_referral_payouts')}
+            {renderSidebarLink('/clinic-referral-transactions', <Share2 size={20} />, 'Clinic Referrals', 'access_clinic_referrals')}
           </div>
 
           <div className="nav-section">
             <span className="section-label">Operations</span>
-            <SidebarLink to="/stock" icon={<Package size={20} />} label="Inventory" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/purchases" icon={<ShoppingBag size={20} />} label="Purchases" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/pricing" icon={<Tags size={20} />} label="Price List" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/gp-packages" icon={<Layout size={20} />} label="GP Packages" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/laboratory-investigations" icon={<FlaskConical size={20} />} label="Laboratory" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/lab-pricing" icon={<Percent size={20} />} label="Lab Pricing Setup" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            {renderSidebarLink('/stock', <Package size={20} />, 'Inventory', 'access_inventory')}
+            {renderSidebarLink('/purchases', <ShoppingBag size={20} />, 'Purchases', 'access_purchases')}
+            {renderSidebarLink('/pricing', <Tags size={20} />, 'Price List', 'access_price_list')}
+            {renderSidebarLink('/gp-packages', <Layout size={20} />, 'GP Packages', 'access_gp_packages')}
+            {renderSidebarLink('/laboratory-investigations', <FlaskConical size={20} />, 'Laboratory', 'access_laboratory')}
+            {renderSidebarLink('/lab-pricing', <Percent size={20} />, 'Lab Pricing Setup', 'access_lab_pricing')}
           </div>
 
           <div className="nav-section">
             <span className="section-label">Analysis</span>
-            <SidebarLink to="/tca-dashboard" icon={<Calendar size={20} />} label="TCA Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/reports" icon={<BarChart3 size={20} />} label="Reports Center" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/revenue-dashboard" icon={<TrendingUp size={20} />} label="Revenue Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/referral-dashboard" icon={<Users size={20} />} label="Referral Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/external-referral-dashboard" icon={<Share2 size={20} />} label="Ext. Referral Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/lab-dashboard" icon={<Activity size={20} />} label="Lab Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/inventory-dashboard" icon={<Package size={20} />} label="Inventory Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/stock-balance-report" icon={<FileText size={20} />} label="Stock Balance Report" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/purchase-dashboard" icon={<ShoppingCart size={20} />} label="Purchase Dashboard" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
-            <SidebarLink to="/lab-payments" icon={<CreditCard size={20} />} label="Lab Payouts" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+            {renderSidebarLink('/tca-dashboard', <User size={20} />, 'Patient Dashboard', 'access_tca_dashboard')}
+            {renderSidebarLink('/reports', <BarChart3 size={20} />, 'Reports Center', 'access_reports_center')}
+            {renderSidebarLink('/revenue-dashboard', <TrendingUp size={20} />, 'Revenue Dashboard', 'access_revenue_dashboard')}
+            {renderSidebarLink('/referral-dashboard', <Users size={20} />, 'Referral Dashboard', 'access_referral_dashboard')}
+            {renderSidebarLink('/external-referral-dashboard', <Share2 size={20} />, 'Ext. Referral Dashboard', 'access_ext_referral_dashboard')}
+            {renderSidebarLink('/lab-dashboard', <Activity size={20} />, 'Lab Dashboard', 'access_lab_dashboard')}
+            {renderSidebarLink('/inventory-dashboard', <Package size={20} />, 'Inventory Dashboard', 'access_inventory_dashboard')}
+            {renderSidebarLink('/stock-balance-report', <FileText size={20} />, 'Stock Balance Report', 'access_stock_balance_report')}
+            {renderSidebarLink('/purchase-dashboard', <ShoppingCart size={20} />, 'Purchase Dashboard', 'access_purchase_dashboard')}
+            {renderSidebarLink('/lab-payments', <CreditCard size={20} />, 'Lab Payouts', 'access_lab_payouts')}
           </div>
 
           <div className="nav-section">
+            {(isAdmin || hasPermission('manage_users')) && (
+               <>
+                 <SidebarLink to="/users" icon={<UserCog size={20} />} label="User Management" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+                 <SidebarLink to="/roles" icon={<Users size={20} />} label="Role Management" onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)} />
+               </>
+            )}
+
             <button 
               className={`nav-dropdown-btn ${isMasterDataOpen ? 'active' : ''}`}
               onClick={() => setIsMasterDataOpen(!isMasterDataOpen)}
@@ -89,17 +108,19 @@ export default function DashboardLayout() {
             
             {isMasterDataOpen && (
               <div className="dropdown-content-modern">
-                {masterDataLinks.map(link => (
-                  <NavLink 
-                    key={link.path} 
-                    to={link.path} 
-                    className={({ isActive }) => `dropdown-item ${isActive ? 'active' : ''}`}
-                    onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)}
-                  >
-                    <link.icon size={16} />
-                    <span>{link.label}</span>
-                  </NavLink>
-                ))}
+                {masterDataLinks
+                  .filter(link => !link.permission || hasPermission(link.permission))
+                  .map(link => (
+                    <NavLink 
+                      key={link.path} 
+                      to={link.path} 
+                      className={({ isActive }) => `dropdown-item ${isActive ? 'active' : ''}`}
+                      onClick={() => window.innerWidth <= 768 && setIsDrawerOpen(false)}
+                    >
+                      <link.icon size={16} />
+                      <span>{link.label}</span>
+                    </NavLink>
+                  ))}
               </div>
             )}
           </div>
@@ -107,11 +128,18 @@ export default function DashboardLayout() {
 
         <div className="sidebar-footer-modern">
            <div className="user-profile-pill">
-             <div className="user-avatar">AD</div>
+             <div className="user-avatar">{user?.username?.substring(0, 2).toUpperCase() || '??'}</div>
              <div className="user-info">
-               <span className="user-name">Administrator</span>
-               <span className="user-role">Clinic Manager</span>
+               <span className="user-name">{user?.username || 'Guest'}</span>
+               <span className="user-role">{user?.role || 'User'}</span>
              </div>
+             <button 
+               onClick={handleLogout}
+               className="logout-btn"
+               title="Logout"
+             >
+               <LogOut size={18} />
+             </button>
            </div>
         </div>
       </aside>
@@ -289,9 +317,20 @@ export default function DashboardLayout() {
           color: #475569;
           font-size: 0.8rem;
         }
-        .user-info { display: flex; flex-direction: column; }
-        .user-name { font-size: 0.85rem; font-weight: 700; color: #1e293b; }
-        .user-role { font-size: 0.7rem; color: #94a3b8; }
+        .user-info { display: flex; flex-grow: 1; flex-direction: column; min-width: 0; }
+        .user-name { font-size: 0.85rem; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .user-role { font-size: 0.7rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .logout-btn {
+          color: #94a3b8;
+          padding: 0.5rem;
+          border-radius: 8px;
+          transition: all 0.2s;
+          background: none;
+          border: none;
+          cursor: pointer;
+        }
+        .logout-btn:hover { background: #fee2e2; color: #ef4444; }
 
         /* Main Container Styles */
         .main-container-modern {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Search, UserPlus, Clock, X, Check, Search as SearchIcon, Plus } from 'lucide-react';
 import AddPatientModal from '../../components/Modals/AddPatientModal';
 
+import apiRequest from '../../utils/api';
 import { API_BASE } from '../../config';
 
 export default function ReceptionDashboard() {
@@ -56,7 +57,7 @@ export default function ReceptionDashboard() {
   const fetchAppointments = async () => {
     setLoadingAppts(true);
     try {
-      const res = await fetch(`${API_BASE}/appointments?page=${apptPage}&limit=${apptLimit}`);
+      const res = await apiRequest(`/appointments?page=${apptPage}&limit=${apptLimit}`);
       const result = await res.json();
       setAppointments(result.data || []);
       setApptTotalPages(result.totalPages || 1);
@@ -69,7 +70,7 @@ export default function ReceptionDashboard() {
 
   const fetchPhysicians = async () => {
     try {
-      const res = await fetch(`${API_BASE}/master-data/physicians?limit=100`);
+      const res = await apiRequest('/master-data/physicians?limit=100');
       const result = await res.json();
       setPhysicians(result.data || []);
     } catch (err) {
@@ -79,7 +80,7 @@ export default function ReceptionDashboard() {
 
   const fetchPatientsForDropdown = async () => {
     try {
-      const res = await fetch(`${API_BASE}/master-data/patients?limit=50`);
+      const res = await apiRequest('/master-data/patients?limit=50');
       const result = await res.json();
       setPatients(result.data || []);
     } catch (err) {
@@ -100,7 +101,7 @@ export default function ReceptionDashboard() {
       queryParams.append('page', searchPage);
       queryParams.append('limit', searchLimit);
       
-      const res = await fetch(`${API_BASE}/reception/patients/search?${queryParams.toString()}`);
+      const res = await apiRequest(`/reception/patients/search?${queryParams.toString()}`);
       const result = await res.json();
       setSearchResults(result.data || []);
       setSearchTotalPages(result.totalPages || 1);
@@ -120,9 +121,8 @@ export default function ReceptionDashboard() {
   const submitAppointment = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/appointments`, {
+      const res = await apiRequest('/appointments', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(apptForm)
       });
       if (res.ok) {
@@ -137,9 +137,8 @@ export default function ReceptionDashboard() {
 
   const updateApptStatus = async (id, status) => {
     try {
-      const res = await fetch(`${API_BASE}/appointments/${id}/status`, {
+      const res = await apiRequest(`/appointments/${id}/status`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
       });
       if (res.ok) {

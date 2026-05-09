@@ -3,7 +3,7 @@ import {
   ShoppingCart, DollarSign, AlertCircle, Calendar, Zap, Truck, FileText
 } from 'lucide-react';
 
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function PurchaseDashboard() {
   const [data, setData] = useState(null);
@@ -23,7 +23,7 @@ export default function PurchaseDashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/dashboard/purchase?startDate=${startDate}&endDate=${endDate}`);
+      const res = await apiRequest(`/dashboard/purchase?startDate=${startDate}&endDate=${endDate}`);
       const result = await res.json();
       setData(result);
     } catch (err) {

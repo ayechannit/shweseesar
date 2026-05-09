@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Save, X, Search, Package, CheckCircle2, AlertCircle } from 'lucide-react';
-
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function GPPackageManagement() {
   const [packages, setPackages] = useState([]);
@@ -34,10 +33,12 @@ export default function GPPackageManagement() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/gp-packages?page=${page}&limit=${limit}`);
-      const result = await res.json();
-      setPackages(result.data || []);
-      setTotalPages(result.totalPages || 1);
+      const res = await apiRequest(`/gp-packages?page=${page}&limit=${limit}`);
+      if (res && res.ok) {
+        const result = await res.json();
+        setPackages(result.data || []);
+        setTotalPages(result.totalPages || 1);
+      }
     } catch (err) {
       showNotification('Failed to load packages', 'error');
     } finally {
@@ -47,9 +48,11 @@ export default function GPPackageManagement() {
 
   const fetchStockItems = async () => {
     try {
-      const res = await fetch(`${API_BASE}/pricing/items?limit=1000`); // Get many for search
-      const result = await res.json();
-      setStockItems(result.data || []);
+      const res = await apiRequest('/pricing/items?limit=1000'); // Get many for search
+      if (res && res.ok) {
+        const result = await res.json();
+        setStockItems(result.data || []);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -116,20 +119,19 @@ export default function GPPackageManagement() {
     }
 
     const method = editingPkg ? 'PUT' : 'POST';
-    const url = editingPkg ? `${API_BASE}/gp-packages/${editingPkg.id}` : `${API_BASE}/gp-packages`;
+    const endpoint = editingPkg ? `/gp-packages/${editingPkg.id}` : `/gp-packages`;
 
     try {
-      const res = await fetch(url, {
+      const res = await apiRequest(endpoint, {
         method,
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
 
-      if (res.ok) {
+      if (res && res.ok) {
         showNotification(editingPkg ? 'Package updated' : 'Package created');
         setIsModalOpen(false);
         fetchData();
-      } else {
+      } else if (res) {
         const err = await res.json();
         showNotification(err.error || 'Operation failed', 'error');
       }
@@ -141,8 +143,8 @@ export default function GPPackageManagement() {
   const deletePackage = async (id) => {
     if (!window.confirm('Are you sure you want to delete this package?')) return;
     try {
-      const res = await fetch(`${API_BASE}/gp-packages/${id}`, { method: 'DELETE' });
-      if (res.ok) {
+      const res = await apiRequest(`/gp-packages/${id}`, { method: 'DELETE' });
+      if (res && res.ok) {
         showNotification('Package deleted');
         fetchData();
       }

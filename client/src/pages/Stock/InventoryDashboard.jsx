@@ -3,6 +3,7 @@ import {
   Package, AlertTriangle, Clock, ArchiveX, Zap, DollarSign
 } from 'lucide-react';
 
+import apiRequest from '../../utils/api';
 import { API_BASE } from '../../config';
 
 export default function InventoryDashboard() {
@@ -16,7 +17,7 @@ export default function InventoryDashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/dashboard/inventory`);
+      const res = await apiRequest('/dashboard/inventory');
       const result = await res.json();
       setData(result);
     } catch (err) {

@@ -7,7 +7,7 @@ import {
   CheckCircle, XCircle, MoreVertical, Layout, Truck, Printer
 } from 'lucide-react';
 
-import { API_BASE } from '../../config';
+import apiRequest from '../../utils/api';
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState('revenue');
@@ -21,8 +21,8 @@ export default function ReportsPage() {
   const fetchReportData = async () => {
     setLoading(true);
     try {
-      let endpoint = `reports/${activeTab}`;
-      const res = await fetch(`${API_BASE}/${endpoint}?start_date=${startDate}&end_date=${endDate}`);
+      let endpoint = `/reports/${activeTab}`;
+      const res = await apiRequest(`${endpoint}?start_date=${startDate}&end_date=${endDate}`);
       const result = await res.json();
       setData(result);
     } catch (err) { console.error(err); } finally { setLoading(false); }

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, UserPlus } from 'lucide-react';
+import apiRequest from '../../utils/api';
 
 export default function AddPatientModal({ isOpen, onClose, onSave, apiBase }) {
   const [newPatient, setNewPatient] = useState({
@@ -17,12 +18,11 @@ export default function AddPatientModal({ isOpen, onClose, onSave, apiBase }) {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${apiBase}/master-data/patients`, {
+      const res = await apiRequest(`/master-data/patients`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPatient)
       });
-      if (res.ok) {
+      if (res && res.ok) {
         const addedPatient = await res.json();
         onSave(addedPatient);
         onClose();

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, FileText, Calendar, User, DollarSign, Eye, Printer, Filter, X } from 'lucide-react';
 import VoucherEntry from './VoucherEntry';
+import apiRequest from '../../utils/api';
 
 import { API_BASE } from '../../config';
 
@@ -25,8 +26,8 @@ export default function BillingPage() {
 
   const fetchPrintSettings = async () => {
     try {
-      const res = await fetch(`${API_BASE}/settings/voucher`);
-      if (res.ok) {
+      const res = await apiRequest('/settings/voucher');
+      if (res && res.ok) {
         const data = await res.json();
         setPrintSettings(data);
       }
@@ -44,10 +45,12 @@ export default function BillingPage() {
   const fetchVouchers = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/billing/vouchers?page=${page}&limit=${limit}`);
-      const result = await res.json();
-      setVouchers(result.data || []);
-      setTotalPages(result.totalPages || 1);
+      const res = await apiRequest(`/billing/vouchers?page=${page}&limit=${limit}`);
+      if (res && res.ok) {
+        const result = await res.json();
+        setVouchers(result.data || []);
+        setTotalPages(result.totalPages || 1);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -57,10 +60,12 @@ export default function BillingPage() {
 
   const handleView = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/billing/vouchers/${id}`);
-      const data = await res.json();
-      setSelectedVoucher(data);
-      setIsViewModalOpen(true);
+      const res = await apiRequest(`/billing/vouchers/${id}`);
+      if (res && res.ok) {
+        const data = await res.json();
+        setSelectedVoucher(data);
+        setIsViewModalOpen(true);
+      }
     } catch (err) {
       console.error(err);
       alert('Failed to fetch voucher details');
@@ -69,89 +74,91 @@ export default function BillingPage() {
 
   const handlePrint = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/billing/vouchers/${id}`);
-      const data = await res.json();
-      setSelectedVoucher(data);
-      setIsViewModalOpen(true);
+      const res = await apiRequest(`/billing/vouchers/${id}`);
+      if (res && res.ok) {
+        const data = await res.json();
+        setSelectedVoucher(data);
+        setIsViewModalOpen(true);
 
-      // Give React time to render the modal and the printable content
-      setTimeout(() => {
-        const printContent = document.getElementById('printable-voucher');
-        if (printContent) {
-          // Create a hidden iframe for printing
-          const iframe = document.createElement('iframe');
-          iframe.style.position = 'fixed';
-          iframe.style.right = '0';
-          iframe.style.bottom = '0';
-          iframe.style.width = '0';
-          iframe.style.height = '0';
-          iframe.style.border = '0';
-          document.body.appendChild(iframe);
+        // Give React time to render the modal and the printable content
+        setTimeout(() => {
+          const printContent = document.getElementById('printable-voucher');
+          if (printContent) {
+            // Create a hidden iframe for printing
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'fixed';
+            iframe.style.right = '0';
+            iframe.style.bottom = '0';
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = '0';
+            document.body.appendChild(iframe);
 
-          const doc = iframe.contentWindow.document;
-          
-          // Add the content and basic styles to the iframe
-          doc.open();
-          doc.write(`
-            <html>
-              <head>
-                <title>Print Voucher - ${data.voucher_number}</title>
-                <style>
-                  body { 
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                    margin: 0;
-                    padding: 0;
-                    color: #0f172a;
-                  }
-                  @page { 
-                    margin: ${printSettings?.margin_top || '10px'} ${printSettings?.margin_right || '10px'} ${printSettings?.margin_bottom || '10px'} ${printSettings?.margin_left || '10px'}; 
-                  }
-                  #printable-voucher { 
-                    width: ${printSettings?.width || '100%'}; 
-                    margin: 0 auto;
-                    background: white;
-                  }
-                  .status-badge {
-                    display: inline-block;
-                    padding: 0.25rem 0.5rem;
-                    border-radius: 9999px;
-                    font-size: 0.75rem;
-                    font-weight: 600;
-                    text-transform: uppercase;
-                  }
-                  .status-completed {
-                    background-color: #d1fae5;
-                    color: #059669;
-                  }
-                  table {
-                    width: 100%;
-                    border-collapse: collapse;
-                  }
-                  th, td {
-                    text-align: left;
-                  }
-                </style>
-              </head>
-              <body>
-                <div id="printable-voucher">
-                  ${printContent.innerHTML}
-                </div>
-              </body>
-            </html>
-          `);
-          doc.close();
+            const doc = iframe.contentWindow.document;
+            
+            // Add the content and basic styles to the iframe
+            doc.open();
+            doc.write(`
+              <html>
+                <head>
+                  <title>Print Voucher - ${data.voucher_number}</title>
+                  <style>
+                    body { 
+                      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                      margin: 0;
+                      padding: 0;
+                      color: #0f172a;
+                    }
+                    @page { 
+                      margin: ${printSettings?.margin_top || '10px'} ${printSettings?.margin_right || '10px'} ${printSettings?.margin_bottom || '10px'} ${printSettings?.margin_left || '10px'}; 
+                    }
+                    #printable-voucher { 
+                      width: ${printSettings?.width || '100%'}; 
+                      margin: 0 auto;
+                      background: white;
+                    }
+                    .status-badge {
+                      display: inline-block;
+                      padding: 0.25rem 0.5rem;
+                      border-radius: 9999px;
+                      font-size: 0.75rem;
+                      font-weight: 600;
+                      text-transform: uppercase;
+                    }
+                    .status-completed {
+                      background-color: #d1fae5;
+                      color: #059669;
+                    }
+                    table {
+                      width: 100%;
+                      border-collapse: collapse;
+                    }
+                    th, td {
+                      text-align: left;
+                    }
+                  </style>
+                </head>
+                <body>
+                  <div id="printable-voucher">
+                    ${printContent.innerHTML}
+                  </div>
+                </body>
+              </html>
+            `);
+            doc.close();
 
-          // Wait for the iframe to fully load before printing
-          setTimeout(() => {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-            // Remove the iframe after printing
+            // Wait for the iframe to fully load before printing
             setTimeout(() => {
-              document.body.removeChild(iframe);
-            }, 1000);
-          }, 500);
-        }
-      }, 600);
+              iframe.contentWindow.focus();
+              iframe.contentWindow.print();
+              // Remove the iframe after printing
+              setTimeout(() => {
+                document.body.removeChild(iframe);
+              }, 1000);
+            }, 500);
+          }
+        }, 600);
+      }
     } catch (err) {
       console.error(err);
       alert('Failed to fetch voucher for printing');

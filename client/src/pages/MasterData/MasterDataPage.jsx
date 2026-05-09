@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { masterDataConfig } from '../../config/masterDataConfig';
-
-import { API_BASE as RAW_API_BASE } from '../../config';
-const API_BASE = `${RAW_API_BASE}/master-data`;
+import apiRequest from '../../utils/api';
 
 export default function MasterDataPage({ type }) {
   const [data, setData] = useState([]);
@@ -23,7 +21,7 @@ export default function MasterDataPage({ type }) {
   const fetchData = async (page = currentPage) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/${config.table}?page=${page}&limit=${itemsPerPage}`);
+      const res = await apiRequest(`/master-data/${config.table}?page=${page}&limit=${itemsPerPage}`);
       const result = await res.json();
       
       // Handle the new paginated response structure
@@ -112,9 +110,9 @@ export default function MasterDataPage({ type }) {
     e.preventDefault();
     try {
       const method = editingRecord ? 'PUT' : 'POST';
-      const url = editingRecord 
-        ? `${API_BASE}/${config.table}/${editingRecord.id}`
-        : `${API_BASE}/${config.table}`;
+      const endpoint = editingRecord 
+        ? `/master-data/${config.table}/${editingRecord.id}`
+        : `/master-data/${config.table}`;
 
       const payload = { ...formData };
       config.fields.forEach(field => {
@@ -123,9 +121,8 @@ export default function MasterDataPage({ type }) {
         }
       });
 
-      const res = await fetch(url, {
+      const res = await apiRequest(endpoint, {
         method,
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
@@ -143,7 +140,7 @@ export default function MasterDataPage({ type }) {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this record?')) return;
     try {
-      const res = await fetch(`${API_BASE}/${config.table}/${id}`, {
+      const res = await apiRequest(`/master-data/${config.table}/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {

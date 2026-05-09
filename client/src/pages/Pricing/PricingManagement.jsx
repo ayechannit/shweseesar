@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Download, Upload, Edit2, Save, X, Search, Filter, ArrowUpDown, ChevronDown, CheckCircle2, AlertCircle, Plus, FileSpreadsheet } from 'lucide-react';
 
+import apiRequest from '../../utils/api';
 import { API_BASE } from '../../config';
 
 export default function PricingManagement() {
@@ -39,10 +40,10 @@ export default function PricingManagement() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      let url = `${API_BASE}/pricing/items?page=${page}&limit=${limit}`;
+      let url = `/pricing/items?page=${page}&limit=${limit}`;
       if (selectedCategory) url += `&category_id=${selectedCategory}`;
       
-      const res = await fetch(url);
+      const res = await apiRequest(url);
       const result = await res.json();
       setItems(result.data || []);
       setTotalPages(result.totalPages || 1);
@@ -56,12 +57,12 @@ export default function PricingManagement() {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(`${API_BASE}/master-data/item_categories?limit=100`);
+      const res = await apiRequest('/master-data/item_categories?limit=100');
       const result = await res.json();
       setCategories(result.data || []);
       
       // Also fetch all subcategories for the create modal
-      const subRes = await fetch(`${API_BASE}/master-data/item_subcategories?limit=200`);
+      const subRes = await apiRequest('/master-data/item_subcategories?limit=200');
       const subResult = await subRes.json();
       setSubcategories(subResult.data || []);
     } catch (err) {
@@ -81,14 +82,38 @@ export default function PricingManagement() {
     fetchData();
   }, [selectedCategory, page]);
 
-  const handleExport = () => {
-    window.location.href = `${API_BASE}/pricing/export`;
-    showNotification('Exporting pricing data...');
+  const handleExport = async () => {
+    try {
+      const res = await apiRequest('/pricing/export');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'stock_pricing.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showNotification('Exporting pricing data...');
+    } catch (err) {
+      showNotification('Export failed', 'error');
+    }
   };
 
-  const handleDownloadSample = () => {
-    window.location.href = `${API_BASE}/pricing/sample`;
-    showNotification('Downloading sample CSV...');
+  const handleDownloadSample = async () => {
+    try {
+      const res = await apiRequest('/pricing/sample');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sample_stock_pricing.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showNotification('Downloading sample CSV...');
+    } catch (err) {
+      showNotification('Download failed', 'error');
+    }
   };
 
   const handleImport = async (e) => {
@@ -99,7 +124,7 @@ export default function PricingManagement() {
     formData.append('file', file);
 
     try {
-      const res = await fetch(`${API_BASE}/pricing/import`, {
+      const res = await apiRequest('/pricing/import', {
         method: 'POST',
         body: formData,
       });
@@ -121,9 +146,8 @@ export default function PricingManagement() {
   const handleCreateItem = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/stock/items`, {
+      const res = await apiRequest('/stock/items', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newItemForm)
       });
       if (res.ok) {
@@ -170,9 +194,8 @@ export default function PricingManagement() {
 
   const handleSave = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/pricing/items/${id}`, {
+      const res = await apiRequest(`/pricing/items/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm),
       });
 
