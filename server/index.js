@@ -342,19 +342,39 @@ app.post('/api/clinic-referral-transactions/:id/pay', authenticateToken, async (
 
 // POST: Create a new clinic referral transaction
 app.post('/api/clinic-referral-transactions', authenticateToken, async (req, res) => {
-  const { patient_id, refer_clinic_id, notes } = req.body;
+  const { patient_id, refer_clinic_id, visit_type, notes } = req.body;
   
   if (!patient_id || !refer_clinic_id) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
+  if (visit_type && !['OPD', 'OT', 'ADMISSION'].includes(visit_type)) {
+    return res.status(400).json({ error: 'Invalid visit type' });
+  }
+
   try {
+    let commission_amount = 0.00;
+    
+    if (visit_type) {
+      const clinicRes = await db.query(
+        'SELECT opd_commission, ot_commission, admission_commission FROM refer_clinics WHERE id = $1',
+        [refer_clinic_id]
+      );
+      
+      if (clinicRes.rows.length > 0) {
+        const clinic = clinicRes.rows[0];
+        if (visit_type === 'OPD') commission_amount = clinic.opd_commission;
+        else if (visit_type === 'OT') commission_amount = clinic.ot_commission;
+        else if (visit_type === 'ADMISSION') commission_amount = clinic.admission_commission;
+      }
+    }
+
     const query = `
       INSERT INTO clinic_referral_transactions (patient_id, refer_clinic_id, visit_type, commission_amount, notes, created_by)
-      VALUES ($1, $2, NULL, 0.00, $3, $4)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *;
     `;
-    const result = await db.query(query, [patient_id, refer_clinic_id, notes, req.user.id]);
+    const result = await db.query(query, [patient_id, refer_clinic_id, visit_type || null, commission_amount, notes, req.user.id]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('CREATE CLINIC REFERRAL TRANSACTION ERROR:', err);
@@ -2604,11 +2624,14 @@ app.put('/api/investigations/batch/status', authenticateToken, async (req, res) 
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: 'No IDs provided' });
   }
+  if (!status) {
+    return res.status(400).json({ error: 'Status is required' });
+  }
   try {
     const query = `
       UPDATE voucher_items
       SET status = $1, updated_at = CURRENT_TIMESTAMP, updated_by = $2
-      WHERE id = ANY($3)
+      WHERE id = ANY($3::int[])
       RETURNING *
     `;
     const result = await db.query(query, [status, req.user.id, ids]);
