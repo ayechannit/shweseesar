@@ -118,27 +118,40 @@ export default function PurchaseManagement() {
     }
   };
 
-  const handleQuantityChange = (qty) => {
-    const q = parseInt(qty) || 0;
+  const handleQuantityChange = (val) => {
+    if (val === '') {
+      setCurrentItem({ ...currentItem, quantity: '', subtotal: 0 });
+      return;
+    }
+    const q = parseInt(val);
+    if (isNaN(q)) return;
     setCurrentItem({
       ...currentItem,
       quantity: q,
-      subtotal: q * currentItem.purchase_price
+      subtotal: q * (parseFloat(currentItem.purchase_price) || 0)
     });
   };
 
-  const handlePurchasePriceChange = (price) => {
-    const p = parseFloat(price) || 0;
+  const handlePurchasePriceChange = (val) => {
+    if (val === '') {
+      setCurrentItem({ ...currentItem, purchase_price: '', subtotal: 0 });
+      return;
+    }
+    const p = parseFloat(val);
+    if (isNaN(p)) return;
     setCurrentItem({
       ...currentItem,
       purchase_price: p,
-      subtotal: currentItem.quantity * p
+      subtotal: (parseInt(currentItem.quantity) || 0) * p
     });
   };
 
   const addItemToPurchase = () => {
-    if (!currentItem.item_id || currentItem.quantity <= 0 || currentItem.purchase_price < 0) {
-      alert("Please fill item details correctly.");
+    const qty = parseInt(currentItem.quantity);
+    const price = parseFloat(currentItem.purchase_price);
+
+    if (!currentItem.item_id || isNaN(qty) || qty <= 0 || isNaN(price) || price < 0) {
+      alert("Please fill item details correctly with valid numbers.");
       return;
     }
 
@@ -148,14 +161,14 @@ export default function PurchaseManagement() {
     const existingItemIndex = items.findIndex(item => 
       item.item_id === currentItem.item_id && 
       (item.batch_number || '') === (currentItem.batch_number || '') &&
-      item.purchase_price === currentItem.purchase_price
+      item.purchase_price === price
     );
 
     if (existingItemIndex >= 0) {
       // Update existing item
       const updatedItems = [...items];
       const existingItem = updatedItems[existingItemIndex];
-      const newQuantity = existingItem.quantity + currentItem.quantity;
+      const newQuantity = existingItem.quantity + qty;
       
       updatedItems[existingItemIndex] = {
         ...existingItem,
@@ -165,7 +178,7 @@ export default function PurchaseManagement() {
       setItems(updatedItems);
     } else {
       // Add new item
-      setItems([...items, { ...currentItem, item_name: itemData?.name, unit: itemData?.unit }]);
+      setItems([...items, { ...currentItem, quantity: qty, purchase_price: price, item_name: itemData?.name, unit: itemData?.unit }]);
     }
     
     // Reset
@@ -188,28 +201,37 @@ export default function PurchaseManagement() {
     setItemSearch(''); // Optional: clear search if they remove an item to start fresh
   };
 
-  const updateItemQuantity = (index, newQuantity) => {
-    const qty = parseInt(newQuantity) || 0;
+  const updateItemQuantity = (index, val) => {
     const newItems = [...items];
     const item = newItems[index];
-    
+
+    if (val === '') {
+      newItems[index] = { ...item, quantity: '', subtotal: 0 };
+      setItems(newItems);
+      return;
+    }
+
+    const qty = parseInt(val);
+    if (isNaN(qty)) return;
+
     if (qty <= 0) {
-      // Option A: Could remove the item if qty goes to 0
-      // removeItem(index);
-      // Option B: Just don't allow it to go below 1
+      // Option B: Just don't allow it to go below 1 (or allow 0 but prompt)
+      // Here we allow the user to type it, but we can't save it as 0.
+      newItems[index] = { ...item, quantity: qty, subtotal: 0 };
+      setItems(newItems);
       return; 
     }
 
     newItems[index] = {
       ...item,
       quantity: qty,
-      subtotal: qty * item.purchase_price
+      subtotal: qty * parseFloat(item.purchase_price)
     };
     setItems(newItems);
   };
 
-  const totalAmount = items.reduce((sum, item) => sum + item.subtotal, 0);
-  const balanceAmount = totalAmount - paidAmount;
+  const totalAmount = items.reduce((sum, item) => sum + (parseFloat(item.subtotal) || 0), 0);
+  const balanceAmount = totalAmount - (parseFloat(paidAmount) || 0);
 
   const handleSaveSupplier = async (e) => {
     e.preventDefault();
@@ -238,8 +260,19 @@ export default function PurchaseManagement() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!supplierId || items.length === 0) {
-      alert("Please select a supplier and add at least one item.");
+    
+    // Validation
+    if (!supplierId) {
+      alert("Please select a supplier.");
+      return;
+    }
+    if (items.length === 0) {
+      alert("Please add at least one item.");
+      return;
+    }
+    const hasInvalidItems = items.some(i => i.quantity === '' || i.quantity <= 0);
+    if (hasInvalidItems) {
+      alert("Please ensure all items have a valid quantity greater than 0.");
       return;
     }
 
@@ -629,7 +662,14 @@ export default function PurchaseManagement() {
                       <input 
                         type="number" 
                         value={paidAmount} 
-                        onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} 
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            setPaidAmount('');
+                          } else {
+                            setPaidAmount(parseFloat(val) || 0);
+                          }
+                        }} 
                         style={{ width: '100%', padding: '1rem 1rem 1rem 3.5rem', borderRadius: '0.5rem', border: '2px solid #cbd5e1', fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', outline: 'none', transition: 'border-color 0.2s' }}
                         onFocus={e => e.target.style.borderColor = '#4f46e5'}
                         onBlur={e => e.target.style.borderColor = '#cbd5e1'}

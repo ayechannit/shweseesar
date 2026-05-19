@@ -104,10 +104,21 @@ export default function GPPackageManagement() {
     });
   };
 
-  const updateItemQuantity = (itemId, qty) => {
+  const updateItemQuantity = (itemId, val) => {
     setFormData({
       ...formData,
-      items: formData.items.map(i => i.item_id === itemId ? { ...i, quantity: parseInt(qty) || 1 } : i)
+      items: formData.items.map(i => {
+        if (i.item_id === itemId) {
+            // Allow empty string to let user delete the number
+            if (val === '') {
+                return { ...i, quantity: '' };
+            }
+            // Parse to int if it's a valid number
+            const parsed = parseInt(val);
+            return { ...i, quantity: isNaN(parsed) ? '' : parsed };
+        }
+        return i;
+      })
     });
   };
 
@@ -116,6 +127,13 @@ export default function GPPackageManagement() {
     if (formData.items.length === 0) {
       showNotification('Please add at least one item', 'error');
       return;
+    }
+
+    // Validate that no items have empty or 0 quantity
+    const hasInvalidQuantity = formData.items.some(i => i.quantity === '' || i.quantity <= 0);
+    if (hasInvalidQuantity) {
+        showNotification('All items must have a valid quantity greater than 0', 'error');
+        return;
     }
 
     const method = editingPkg ? 'PUT' : 'POST';

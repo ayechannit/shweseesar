@@ -308,7 +308,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
                   <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Select Doctor</label>
                   <select 
                     className="form-control"
-                    style={{ height: '42px', borderRadius: '8px' }}
+                    style={{ height: '48px', borderRadius: '8px' }}
                     value={selectedPhysicianId}
                     onChange={(e) => setSelectedPhysicianId(e.target.value)}
                   >
