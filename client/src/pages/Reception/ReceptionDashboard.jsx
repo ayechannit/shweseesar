@@ -33,7 +33,7 @@ export default function ReceptionDashboard() {
 
   // --- Search State ---
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchDob, setSearchDob] = useState('');
+  const [searchAge, setSearchAge] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
@@ -42,6 +42,8 @@ export default function ReceptionDashboard() {
     fetchPhysicians();
     // Pre-fetch some patients for the dropdown (top 50)
     fetchPatientsForDropdown();
+    // Initial search load
+    handleSearch();
   }, []);
 
   useEffect(() => {
@@ -52,7 +54,7 @@ export default function ReceptionDashboard() {
     if (activeTab === 'search') {
        handleSearch();
     }
-  }, [searchPage]);
+  }, [searchPage, activeTab]);
 
   const fetchAppointments = async () => {
     setLoadingAppts(true);
@@ -97,7 +99,7 @@ export default function ReceptionDashboard() {
     try {
       const queryParams = new URLSearchParams();
       if (searchQuery) queryParams.append('query', searchQuery);
-      if (searchDob) queryParams.append('dob', searchDob);
+      if (searchAge) queryParams.append('age', searchAge);
       queryParams.append('page', searchPage);
       queryParams.append('limit', searchLimit);
       
@@ -155,11 +157,24 @@ export default function ReceptionDashboard() {
     setIsApptModalOpen(true);
   };
 
+  // Helper to calculate age from DOB
+  const calculateAge = (dob) => {
+    if (!dob) return '-';
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+    }
+    return age;
+  };
+
   return (
-    <div>
-      <div className="page-header">
+    <div className="container-fluid p-2 p-md-4">
+      <div className="page-header flex-column flex-md-row gap-3">
         <h1 className="page-title">Reception Dashboard</h1>
-        <div className="header-actions" style={{ display: 'flex', gap: '0.75rem' }}>
+        <div className="header-actions" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           <button className="btn btn-outline" onClick={() => setIsPatientModalOpen(true)}>
             <UserPlus size={16} /> Quick Register
           </button>
@@ -169,7 +184,7 @@ export default function ReceptionDashboard() {
         </div>
       </div>
 
-      <div className="tabs">
+      <div className="tabs mt-4">
         <button 
           className={`tab-btn ${activeTab === 'appointments' ? 'active' : ''}`}
           onClick={() => setActiveTab('appointments')}
@@ -189,9 +204,9 @@ export default function ReceptionDashboard() {
           <div className="appointments-view">
             <h3 style={{ marginBottom: '1rem' }}>Upcoming Appointments</h3>
             {loadingAppts ? (
-              <div>Loading...</div>
+              <div className="text-center p-5">Loading...</div>
             ) : appointments.length === 0 ? (
-              <div style={{ color: '#64748b' }}>No appointments scheduled.</div>
+              <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>No appointments scheduled.</div>
             ) : (
               <div className="table-responsive">
                 <table>
@@ -208,9 +223,12 @@ export default function ReceptionDashboard() {
                   <tbody>
                     {appointments.map(appt => (
                       <tr key={appt.id}>
-                        <td>{new Date(appt.appointment_date).toLocaleString()}</td>
                         <td>
-                          {appt.patient_name} <br/>
+                          <div className="font-medium">{new Date(appt.appointment_date).toLocaleDateString()}</div>
+                          <div className="text-xs text-gray-500">{new Date(appt.appointment_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        </td>
+                        <td>
+                          <div className="font-medium">{appt.patient_name}</div>
                           <small style={{ color: '#64748b' }}>{appt.patient_code}</small>
                         </td>
                         <td>{appt.patient_phone}</td>
@@ -223,14 +241,14 @@ export default function ReceptionDashboard() {
                         <td>
                           <div className="actions">
                             {appt.status === 'Scheduled' && (
-                              <>
-                                <button className="btn btn-success" style={{ padding: '0.25rem 0.5rem', background: '#10b981', color: 'white' }} onClick={() => updateApptStatus(appt.id, 'Completed')}>
+                              <div className="flex gap-1">
+                                <button className="btn btn-success p-1" style={{ background: '#10b981', color: 'white' }} onClick={() => updateApptStatus(appt.id, 'Completed')} title="Complete">
                                   <Check size={16} />
                                 </button>
-                                <button className="btn btn-danger" style={{ padding: '0.25rem 0.5rem' }} onClick={() => updateApptStatus(appt.id, 'Cancelled')}>
+                                <button className="btn btn-danger p-1" onClick={() => updateApptStatus(appt.id, 'Cancelled')} title="Cancel">
                                   <X size={16} />
                                 </button>
-                              </>
+                              </div>
                             )}
                           </div>
                         </td>
@@ -243,7 +261,7 @@ export default function ReceptionDashboard() {
             
             {/* Appointments Pagination */}
             {!loadingAppts && apptTotalPages > 1 && (
-              <div className="flex justify-between items-center mt-4">
+              <div className="flex flex-column flex-md-row justify-between items-center mt-4 gap-3">
                 <div className="text-sm text-gray-500">Page {apptPage} of {apptTotalPages}</div>
                 <div className="flex gap-2">
                   <button className="btn btn-outline" disabled={apptPage === 1} onClick={() => setApptPage(p => Math.max(p - 1, 1))}>Previous</button>
@@ -256,32 +274,35 @@ export default function ReceptionDashboard() {
 
         {activeTab === 'search' && (
           <div className="search-view">
-            <form onSubmit={handleSearch} style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-              <div style={{ flex: '1', minWidth: '200px' }}>
+            <form onSubmit={handleSearch} className="flex flex-column flex-lg-row gap-3 mb-4">
+              <div style={{ flex: '2', minWidth: '200px' }}>
                 <label className="form-label">Search Name / Phone / Code</label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. John Doe, 09..." 
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div style={{ flex: '1', minWidth: '100px' }}>
+                <label className="form-label">Age</label>
                 <input 
-                  type="text" 
+                  type="number" 
                   className="form-control" 
-                  placeholder="e.g. John Doe, 09..." 
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="e.g. 25"
+                  value={searchAge}
+                  onChange={e => setSearchAge(e.target.value)}
                 />
               </div>
-              <div style={{ flex: '1', minWidth: '150px' }}>
-                <label className="form-label">Date of Birth</label>
-                <input 
-                  type="date" 
-                  className="form-control" 
-                  value={searchDob}
-                  onChange={e => setSearchDob(e.target.value)}
-                />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem' }}>
-                <button type="submit" className="btn btn-primary" disabled={isSearching}>
+              <div className="flex items-end gap-2">
+                <button type="submit" className="btn btn-primary" disabled={isSearching} style={{ height: '42px', whiteSpace: 'nowrap' }}>
                   <SearchIcon size={16} /> Search
                 </button>
-                <a href="/patients" className="btn btn-outline" style={{ textDecoration: 'none' }}>
-                  <UserPlus size={16} /> Register
+                <a href="/patients" className="btn btn-outline" style={{ textDecoration: 'none', height: '42px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center' }}>
+                  <UserPlus size={16} className="mr-1" /> Register
                 </a>
               </div>
             </form>
@@ -293,14 +314,14 @@ export default function ReceptionDashboard() {
                     <th>Patient Code</th>
                     <th>Name</th>
                     <th>Phone</th>
-                    <th>DOB</th>
+                    <th>Age</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {searchResults.length === 0 ? (
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'center', padding: '1rem', color: '#64748b' }}>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
                         {isSearching ? 'Searching...' : 'No results found. Please search.'}
                       </td>
                     </tr>
@@ -310,7 +331,7 @@ export default function ReceptionDashboard() {
                         <td><strong>{patient.patient_code}</strong></td>
                         <td>{patient.name}</td>
                         <td>{patient.phone_number}</td>
-                        <td>{new Date(patient.date_of_birth).toLocaleDateString()}</td>
+                        <td>{calculateAge(patient.date_of_birth)}</td>
                         <td>
                           <button 
                             className="btn btn-outline" 
@@ -329,7 +350,7 @@ export default function ReceptionDashboard() {
 
             {/* Search Pagination */}
             {!isSearching && searchTotalPages > 1 && (
-              <div className="flex justify-between items-center mt-4">
+              <div className="flex flex-column flex-md-row justify-between items-center mt-4 gap-3">
                 <div className="text-sm text-gray-500">Page {searchPage} of {searchTotalPages}</div>
                 <div className="flex gap-2">
                   <button className="btn btn-outline" disabled={searchPage === 1} onClick={() => setSearchPage(p => Math.max(p - 1, 1))}>Previous</button>

@@ -969,7 +969,7 @@ app.get('/api/dashboard/executive', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/dashboard/patients', authenticateToken, async (req, res) => {
-  const { search, physicianId, fromDate, toDate, limit = 50, page = 1 } = req.query;
+  const { search, physicianId, fromDate, toDate, showAllPatients, limit = 50, page = 1 } = req.query;
   const offset = (page - 1) * limit;
 
   try {
@@ -1008,27 +1008,35 @@ app.get('/api/dashboard/patients', authenticateToken, async (req, res) => {
       paramIndex++;
     }
 
-    if (physicianId || fromDate || toDate) {
+    // Determine if we need to join with vouchers for filtering
+    const needsVoucherJoin = physicianId || (showAllPatients !== 'true' && (fromDate || toDate));
+
+    if (needsVoucherJoin) {
       // If we are filtering by TCA date or physician, we need to base the list on the vouchers that MATCH those filters.
-      let voucherConditions = ['v.tca_date IS NOT NULL']; // Implicitly, if we filter by these, we care about TCA
+      let voucherConditions = [];
+      
+      if (showAllPatients !== 'true') {
+         voucherConditions.push('v.tca_date IS NOT NULL'); // Implicitly care about TCA unless "Show All Patients" is checked
+      }
       
       if (physicianId) {
         voucherConditions.push(`v.physician_id = $${paramIndex}`);
         params.push(physicianId);
         paramIndex++;
       }
-      if (fromDate) {
+      if (showAllPatients !== 'true' && fromDate) {
         voucherConditions.push(`v.tca_date >= $${paramIndex}`);
         params.push(fromDate);
         paramIndex++;
       }
-      if (toDate) {
+      if (showAllPatients !== 'true' && toDate) {
         voucherConditions.push(`v.tca_date <= $${paramIndex}`);
         params.push(toDate);
         paramIndex++;
       }
 
       let patientWhere = patientConditions.length > 0 ? `AND ${patientConditions.join(' AND ')}` : '';
+      let combinedVoucherConditions = voucherConditions.length > 0 ? `WHERE ${voucherConditions.join(' AND ')} ${patientWhere}` : (patientWhere ? `WHERE ${patientWhere.substring(4)}` : '');
 
       // Use DISTINCT ON patient_id, ordered by the TCA date that matches, or created_at
       listQuery = `
@@ -1044,10 +1052,9 @@ app.get('/api/dashboard/patients', authenticateToken, async (req, res) => {
         FROM vouchers v
         JOIN patients p ON v.patient_id = p.id
         LEFT JOIN physicians ph ON v.physician_id = ph.id
-        WHERE ${voucherConditions.join(' AND ')} ${patientWhere}
+        ${combinedVoucherConditions}
         ORDER BY v.patient_id, v.created_at DESC
       `;
-      // Note: We'll apply limit/offset in JS or wrap this in another SELECT because DISTINCT ON requires ORDER BY patient_id first.
       
       // Wrapping it to allow proper ordering by created_at overall
       listQuery = `
@@ -1058,7 +1065,7 @@ app.get('/api/dashboard/patients', authenticateToken, async (req, res) => {
       `;
 
     } else {
-      // Default view: No TCA filters, just show recent patients and their absolute latest info
+      // Default view OR showAllPatients is true (with NO physician selected): just show recent patients and their absolute latest info
       let whereSql = patientConditions.length > 0 ? `WHERE ${patientConditions.join(' AND ')}` : '';
       
       listQuery = `
@@ -1610,7 +1617,7 @@ app.get('/api/reports/financial', authenticateToken, async (req, res) => {
 // Patient Search
 app.get('/api/reception/patients/search', authenticateToken, async (req, res) => {
   const { query } = req.query; // Search by name, phone_number, patient_code
-  const { dob } = req.query;   // Search by date_of_birth exactly
+  const { dob, age } = req.query;   // Search by date_of_birth exactly or age
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
@@ -1629,6 +1636,12 @@ app.get('/api/reception/patients/search', authenticateToken, async (req, res) =>
     if (dob) {
       baseSql += ` AND date_of_birth = $${paramIndex}`;
       params.push(dob);
+      paramIndex++;
+    }
+
+    if (age) {
+      baseSql += ` AND EXTRACT(YEAR FROM AGE(date_of_birth)) = $${paramIndex}`;
+      params.push(parseInt(age));
       paramIndex++;
     }
 

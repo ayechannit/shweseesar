@@ -12,11 +12,17 @@ export default function PatientDashboard() {
   // Filters
   const [search, setSearch] = useState('');
   const [physicianId, setPhysicianId] = useState('');
+  const [showAllPatients, setShowAllPatients] = useState(false);
   
   // Default dates to today
   const todayStr = new Date().toISOString().split('T')[0];
   const [fromDate, setFromDate] = useState(todayStr);
   const [toDate, setToDate] = useState(todayStr);
+
+  // Pagination
+  const [page, setPage] = useState(1);
+  const limit = 50;
+  const [hasMore, setHasMore] = useState(true);
 
   // Stats
   const [totalCount, setTotalCount] = useState(0);
@@ -30,16 +36,17 @@ export default function PatientDashboard() {
 
   useEffect(() => {
     fetchPhysicians();
-    fetchPatientData();
+    fetchPatientData(1);
   }, []);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      fetchPatientData();
+      setPage(1);
+      fetchPatientData(1);
     }, 300);
     
     return () => clearTimeout(timeoutId);
-  }, [search, physicianId, fromDate, toDate]);
+  }, [search, physicianId, fromDate, toDate, showAllPatients]);
 
   const fetchPhysicians = async () => {
     try {
@@ -53,20 +60,31 @@ export default function PatientDashboard() {
     }
   };
 
-  const fetchPatientData = async () => {
+  const fetchPatientData = async (pageNum = page) => {
     setLoading(true);
     try {
       const queryParams = new URLSearchParams({
         ...(search && { search }),
         ...(physicianId && { physicianId }),
-        ...(fromDate && { fromDate }),
-        ...(toDate && { toDate })
+        ...(showAllPatients ? {} : (fromDate && { fromDate })),
+        ...(showAllPatients ? {} : (toDate && { toDate })),
+        showAllPatients: showAllPatients ? 'true' : 'false',
+        page: pageNum,
+        limit
       });
       
       const res = await apiRequest(`/dashboard/patients?${queryParams}`);
       if (res.ok) {
         const data = await res.json();
-        setPatients(data.patients || []);
+        
+        if (pageNum === 1) {
+            setPatients(data.patients || []);
+        } else {
+            setPatients(prev => [...prev, ...(data.patients || [])]);
+        }
+        
+        setHasMore((data.patients || []).length === limit);
+
         setTotalCount(data.totalCount || 0);
         setTodayCount(data.todayCount || 0);
         setTotalTcaCount(data.totalTcaCount || 0);
@@ -79,12 +97,20 @@ export default function PatientDashboard() {
     }
   };
 
+  const handleLoadMore = () => {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchPatientData(nextPage);
+  };
+
   const clearFilters = () => {
     const today = new Date().toISOString().split('T')[0];
     setSearch('');
     setPhysicianId('');
     setFromDate(today);
     setToDate(today);
+    setShowAllPatients(false);
+    setPage(1);
   };
 
   return (
@@ -148,12 +174,23 @@ export default function PatientDashboard() {
           <div className="flex items-center gap-2" style={{ color: '#475569', fontWeight: 600 }}>
             <Filter size={18} /> Filters
           </div>
-          <button 
-            onClick={clearFilters}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-all border border-slate-200 hover:border-blue-200"
-          >
-            <RotateCcw size={14} /> Clear All
-          </button>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2" style={{ cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, color: '#475569' }}>
+              <input 
+                type="checkbox" 
+                checked={showAllPatients}
+                onChange={(e) => setShowAllPatients(e.target.checked)}
+                style={{ width: '16px', height: '16px', accentColor: '#3b82f6', cursor: 'pointer' }}
+              />
+              Show All Patients (Ignore Dates)
+            </label>
+            <button 
+              onClick={clearFilters}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-all border border-slate-200 hover:border-blue-200"
+            >
+              <RotateCcw size={14} /> Clear All
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
@@ -176,7 +213,7 @@ export default function PatientDashboard() {
               className="form-control" 
               value={physicianId} 
               onChange={(e) => setPhysicianId(e.target.value)}
-              style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #cbd5e1', padding: '0 1rem' }}
+              style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #cbd5e1', padding: '0 1rem', backgroundColor: 'white', cursor: 'pointer' }}
             >
               <option value="">All Physicians</option>
               {physicians.map(p => (
@@ -191,7 +228,8 @@ export default function PatientDashboard() {
               className="form-control" 
               value={fromDate} 
               onChange={(e) => setFromDate(e.target.value)}
-              style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #cbd5e1', padding: '0 1rem' }}
+              disabled={showAllPatients}
+              style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #cbd5e1', padding: '0 1rem', backgroundColor: showAllPatients ? '#f1f5f9' : 'white', cursor: showAllPatients ? 'not-allowed' : 'pointer' }}
             />
           </div>
           <div>
@@ -201,7 +239,8 @@ export default function PatientDashboard() {
               className="form-control" 
               value={toDate} 
               onChange={(e) => setToDate(e.target.value)}
-              style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #cbd5e1', padding: '0 1rem' }}
+              disabled={showAllPatients}
+              style={{ width: '100%', height: '40px', borderRadius: '8px', border: '1px solid #cbd5e1', padding: '0 1rem', backgroundColor: showAllPatients ? '#f1f5f9' : 'white', cursor: showAllPatients ? 'not-allowed' : 'pointer' }}
             />
           </div>
         </div>
@@ -355,6 +394,24 @@ export default function PatientDashboard() {
             </tbody>
           </table>
         </div>
+        
+        {/* Load More Button */}
+        {!loading && hasMore && (
+          <div style={{ padding: '1rem', textAlign: 'center', borderTop: '1px solid #e2e8f0' }}>
+            <button 
+              onClick={handleLoadMore}
+              style={{
+                backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1',
+                padding: '0.5rem 1.5rem', borderRadius: '0.5rem', fontWeight: 600,
+                cursor: 'pointer', transition: 'all 0.2s', fontSize: '0.875rem'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#e2e8f0'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
+            >
+              Load More Patients
+            </button>
+          </div>
+        )}
       </div>
       
       <PatientClinicalModal 
