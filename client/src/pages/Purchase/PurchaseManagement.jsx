@@ -84,7 +84,17 @@ export default function PurchaseManagement() {
 
   const fetchStockItems = async () => {
     try {
-      const res = await apiRequest('/stock/items?limit=1000&category_id=1');
+      // First fetch categories to find the ID for 'PHARMACY'
+      const catRes = await apiRequest('/master-data/item_categories?limit=100');
+      const catData = await catRes.json();
+      const pharmacyCat = (catData.data || catData).find(c => c.name === 'PHARMACY');
+      
+      let url = '/stock/items?limit=1000';
+      if (pharmacyCat) {
+        url += `&category_id=${pharmacyCat.id}`;
+      }
+
+      const res = await apiRequest(url);
       const data = await res.json();
       setStockItems(data.data || []);
     } catch (err) {
