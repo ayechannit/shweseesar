@@ -1798,6 +1798,138 @@ app.delete('/api/appointments/:id', authenticateToken, async (req, res) => {
 
 // --- Stock Management Module Routes ---
 
+// GET: Export Stock Items to CSV
+app.get('/api/stock/items/export', authenticateToken, async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        si.item_code, si.name, ic.name as category, isc.name as subcategory,
+        si.unit, si.min_stock_level, si.default_purchase_price, si.default_sale_price
+      FROM stock_items si
+      LEFT JOIN item_subcategories isc ON si.subcategory_id = isc.id
+      LEFT JOIN item_categories ic ON isc.category_id = ic.id
+      WHERE si.is_active = true
+      ORDER BY ic.name, isc.name, si.name
+    `;
+    const result = await db.query(query);
+    
+    let csvData = 'Item Code,Name,Category,Subcategory,Unit,Min Stock Level,Purchase Price,Sale Price\n';
+    result.rows.forEach(row => {
+      const name = `"${row.name || ''}"`;
+      const cat = `"${row.category || ''}"`;
+      const subcat = `"${row.subcategory || ''}"`;
+      
+      csvData += `${row.item_code || ''},${name},${cat},${subcat},${row.unit || ''},${row.min_stock_level || 0},${row.default_purchase_price || 0},${row.default_sale_price || 0}\n`;
+    });
+
+    res.header('Content-Type', 'text/csv');
+    res.attachment('stock_items.csv');
+    res.send(csvData);
+  } catch (err) {
+    console.error('CSV Export error:', err);
+    res.status(500).json({ error: 'Failed to export CSV' });
+  }
+});
+
+// GET: Sample CSV for Stock Items Import
+app.get('/api/stock/items/sample', authenticateToken, (req, res) => {
+  const csvData = 'Item Code,Name,Category,Subcategory,Unit,Min Stock Level,Purchase Price,Sale Price\n' +
+    'ITM-001,Paracetamol 500mg,Pharmacy,General Pharmacy,Tab,100,5.00,8.00\n' +
+    'ITM-002,Bandages,Consumables,Wound Care,Pack,50,10.00,15.00\n';
+  
+  res.header('Content-Type', 'text/csv');
+  res.attachment('sample_stock_items.csv');
+  res.send(csvData);
+});
+
+// POST: Import Stock Items from CSV
+app.post('/api/stock/items/import', authenticateToken, upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  const results = [];
+  fs.createReadStream(req.file.path)
+    .pipe(csv())
+    .on('data', (data) => results.push(data))
+    .on('end', async () => {
+      // Delete temp file
+      fs.unlinkSync(req.file.path);
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      const client = await db.pool.connect();
+
+      try {
+        await client.query('BEGIN');
+
+        for (const row of results) {
+          const itemCode = row['Item Code'];
+          const itemName = row['Name'];
+          const categoryName = row['Category'];
+          const subcategoryName = row['Subcategory'];
+          const unit = row['Unit'] || 'Unit';
+          const minStockLevel = parseInt(row['Min Stock Level']) || 0;
+          const purchasePrice = parseFloat(row['Purchase Price']) || 0;
+          const salePrice = parseFloat(row['Sale Price']) || 0;
+
+          if (!itemCode || !itemName || !categoryName || !subcategoryName) {
+            errorCount++;
+            continue;
+          }
+
+          // 1. Resolve Category
+          let categoryId;
+          const catRes = await client.query('SELECT id FROM item_categories WHERE name = $1 AND is_active = true', [categoryName]);
+          if (catRes.rows.length > 0) {
+            categoryId = catRes.rows[0].id;
+          } else {
+            const newCat = await client.query('INSERT INTO item_categories (name, description) VALUES ($1, $2) RETURNING id', [categoryName, 'Imported from CSV']);
+            categoryId = newCat.rows[0].id;
+          }
+
+          // 2. Resolve Subcategory
+          let subcategoryId;
+          const subcatRes = await client.query('SELECT id FROM item_subcategories WHERE name = $1 AND category_id = $2 AND is_active = true', [subcategoryName, categoryId]);
+          if (subcatRes.rows.length > 0) {
+            subcategoryId = subcatRes.rows[0].id;
+          } else {
+            const newSubcat = await client.query('INSERT INTO item_subcategories (name, category_id) VALUES ($1, $2) RETURNING id', [subcategoryName, categoryId]);
+            subcategoryId = newSubcat.rows[0].id;
+          }
+
+          // 3. Upsert Stock Item
+          const existingItem = await client.query('SELECT id FROM stock_items WHERE item_code = $1', [itemCode]);
+          if (existingItem.rows.length > 0) {
+             // Update
+             await client.query(`
+                UPDATE stock_items 
+                SET name = $1, subcategory_id = $2, unit = $3, min_stock_level = $4,
+                    default_purchase_price = $5, default_sale_price = $6, updated_at = CURRENT_TIMESTAMP, updated_by = $7, is_active = true
+                WHERE item_code = $8
+             `, [itemName, subcategoryId, unit, minStockLevel, purchasePrice, salePrice, req.user.id, itemCode]);
+          } else {
+             // Insert
+             await client.query(`
+                INSERT INTO stock_items (item_code, name, subcategory_id, unit, min_stock_level, default_purchase_price, default_sale_price, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             `, [itemCode, itemName, subcategoryId, unit, minStockLevel, purchasePrice, salePrice, req.user.id]);
+          }
+          successCount++;
+        }
+        await client.query('COMMIT');
+        res.json({ message: 'Import completed', success: successCount, failed: errorCount });
+      } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Import process error:', err);
+        res.status(500).json({ error: 'Import failed during processing' });
+      } finally {
+        client.release();
+      }
+    });
+});
+
 // List all stock items with current aggregate quantity
 app.get('/api/stock/items', authenticateToken, async (req, res) => {
   const { subcategory_id, category_id } = req.query; 

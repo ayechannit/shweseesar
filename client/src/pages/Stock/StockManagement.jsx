@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Package, Plus, ArrowDown, ArrowUp, AlertTriangle, X, Search } from 'lucide-react';
-
+import React, { useState, useEffect, useRef } from 'react';
+import { Package, Plus, ArrowDown, ArrowUp, AlertTriangle, X, Search, Download, Upload, FileSpreadsheet } from 'lucide-react';
+import { API_BASE } from '../../config';
 import apiRequest from '../../utils/api';
 
 export default function StockManagement() {
@@ -43,6 +43,10 @@ export default function StockManagement() {
   const [isAddingSubcat, setIsAddingSubcat] = useState(false);
   const [isAddingEditSubcat, setIsAddingEditSubcat] = useState(false);
   const [newSubcatName, setNewSubcatName] = useState('');
+
+  // File Input Ref
+  const fileInputRef = useRef(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -275,12 +279,123 @@ export default function StockManagement() {
     }
   };
 
+  const handleExportCSV = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/stock/items/export`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'stock_items.csv';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to export CSV');
+    }
+  };
+
+  const handleDownloadSample = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/stock/items/sample`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sample_stock_items.csv';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to download sample');
+    }
+  };
+
+  const handleImportCSV = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`${API_BASE}/stock/items/import`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: formData
+      });
+
+      const result = await res.json();
+      if (res.ok) {
+        alert(`Import complete! Success: ${result.success}, Failed: ${result.failed}`);
+        fetchItems();
+        fetchCategories(); // Refresh in case new ones were added
+        fetchSubcategories();
+      } else {
+        alert(result.error || 'Import failed');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error during import');
+    } finally {
+      setIsImporting(false);
+      // Reset input so the same file can be selected again if needed
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-title">Stock & Inventory</h1>
-        <div className="header-actions">
-          <button className="btn btn-outline" onClick={openNewItemModal}>
+      <div className="page-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 className="page-title" style={{ margin: 0 }}>Stock & Inventory</h1>
+        <div className="header-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button className="btn btn-outline" onClick={handleExportCSV} title="Export to CSV">
+            <Download size={16} /> Export
+          </button>
+          
+          <button className="btn btn-outline" onClick={handleDownloadSample} title="Download Sample CSV">
+            <FileSpreadsheet size={16} /> Sample
+          </button>
+          
+          <div>
+            <input 
+              type="file" 
+              accept=".csv" 
+              style={{ display: 'none' }} 
+              ref={fileInputRef}
+              onChange={handleImportCSV}
+            />
+            <button 
+              className="btn btn-outline" 
+              onClick={() => fileInputRef.current?.click()} 
+              disabled={isImporting}
+              title="Import from CSV"
+            >
+              <Upload size={16} /> {isImporting ? 'Importing...' : 'Import'}
+            </button>
+          </div>
+
+          <button className="btn btn-primary" onClick={openNewItemModal}>
             <Plus size={16} /> New Item
           </button>
         </div>
