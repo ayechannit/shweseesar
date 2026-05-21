@@ -13,6 +13,9 @@ export default function PatientDashboard() {
   const [search, setSearch] = useState('');
   const [physicianId, setPhysicianId] = useState('');
   const [showAllPatients, setShowAllPatients] = useState(false);
+  const [isNewToday, setIsNewToday] = useState(false);
+  const [isTotalTca, setIsTotalTca] = useState(false);
+  const [activeCard, setActiveCard] = useState(null); // 'total', 'new', 'tca', 'tomorrow'
   
   // Default dates to today
   const todayStr = new Date().toISOString().split('T')[0];
@@ -46,7 +49,7 @@ export default function PatientDashboard() {
     }, 300);
     
     return () => clearTimeout(timeoutId);
-  }, [search, physicianId, fromDate, toDate, showAllPatients]);
+  }, [search, physicianId, fromDate, toDate, showAllPatients, isNewToday, isTotalTca]);
 
   const fetchPhysicians = async () => {
     try {
@@ -69,6 +72,8 @@ export default function PatientDashboard() {
         ...(showAllPatients ? {} : (fromDate && { fromDate })),
         ...(showAllPatients ? {} : (toDate && { toDate })),
         showAllPatients: showAllPatients ? 'true' : 'false',
+        isNewToday: isNewToday ? 'true' : 'false',
+        isTotalTca: isTotalTca ? 'true' : 'false',
         page: pageNum,
         limit
       });
@@ -110,7 +115,59 @@ export default function PatientDashboard() {
     setFromDate(today);
     setToDate(today);
     setShowAllPatients(false);
+    setIsNewToday(false);
+    setIsTotalTca(false);
+    setActiveCard(null);
     setPage(1);
+  };
+
+  const handleCardClick = (type) => {
+    const today = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+    setActiveCard(type);
+    setSearch('');
+    setPhysicianId('');
+    setPage(1);
+
+    if (type === 'total') {
+      setShowAllPatients(true);
+      setIsNewToday(false);
+      setIsTotalTca(false);
+    } else if (type === 'new') {
+      setShowAllPatients(true); // Don't filter by TCA dates
+      setIsNewToday(true);
+      setIsTotalTca(false);
+    } else if (type === 'tca') {
+      setShowAllPatients(false);
+      setIsNewToday(false);
+      setIsTotalTca(true);
+    } else if (type === 'tomorrow') {
+      setShowAllPatients(false);
+      setIsNewToday(false);
+      setIsTotalTca(false);
+      setFromDate(tomorrowStr);
+      setToDate(tomorrowStr);
+    }
+  };
+
+  const getCardStyle = (type) => {
+    const isActive = activeCard === type;
+    return {
+      backgroundColor: 'white',
+      padding: '1.5rem',
+      borderRadius: '12px',
+      border: isActive ? '2px solid #3b82f6' : '1px solid #e2e8f0',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '1rem',
+      boxShadow: isActive ? '0 10px 15px -3px rgba(59, 130, 246, 0.1)' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      transform: isActive ? 'translateY(-2px)' : 'none'
+    };
   };
 
   return (
@@ -123,7 +180,10 @@ export default function PatientDashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+        <div 
+          onClick={() => handleCardClick('total')}
+          style={getCardStyle('total')}
+        >
           <div style={{ backgroundColor: '#eff6ff', padding: '1rem', borderRadius: '50%', color: '#3b82f6' }}>
             <User size={24} />
           </div>
@@ -134,7 +194,10 @@ export default function PatientDashboard() {
           </div>
         </div>
         
-        <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+        <div 
+          onClick={() => handleCardClick('new')}
+          style={getCardStyle('new')}
+        >
           <div style={{ backgroundColor: '#f0fdf4', padding: '1rem', borderRadius: '50%', color: '#16a34a' }}>
             <User size={24} />
           </div>
@@ -145,7 +208,10 @@ export default function PatientDashboard() {
           </div>
         </div>
 
-        <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+        <div 
+          onClick={() => handleCardClick('tca')}
+          style={getCardStyle('tca')}
+        >
           <div style={{ backgroundColor: '#fdf4ff', padding: '1rem', borderRadius: '50%', color: '#d946ef' }}>
             <Calendar size={24} />
           </div>
@@ -156,7 +222,10 @@ export default function PatientDashboard() {
           </div>
         </div>
 
-        <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '1rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+        <div 
+          onClick={() => handleCardClick('tomorrow')}
+          style={getCardStyle('tomorrow')}
+        >
           <div style={{ backgroundColor: '#fef2f2', padding: '1rem', borderRadius: '50%', color: '#ef4444' }}>
             <Calendar size={24} />
           </div>
@@ -167,6 +236,7 @@ export default function PatientDashboard() {
           </div>
         </div>
       </div>
+
 
       {/* Filters */}
       <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '2rem' }}>

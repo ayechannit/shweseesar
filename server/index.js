@@ -969,7 +969,7 @@ app.get('/api/dashboard/executive', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/dashboard/patients', authenticateToken, async (req, res) => {
-  const { search, physicianId, fromDate, toDate, showAllPatients, limit = 50, page = 1 } = req.query;
+  const { search, physicianId, fromDate, toDate, showAllPatients, isNewToday, isTotalTca, limit = 50, page = 1 } = req.query;
   const offset = (page - 1) * limit;
 
   try {
@@ -1008,14 +1008,18 @@ app.get('/api/dashboard/patients', authenticateToken, async (req, res) => {
       paramIndex++;
     }
 
+    if (isNewToday === 'true') {
+      patientConditions.push('DATE(p.created_at) = CURRENT_DATE');
+    }
+
     // Determine if we need to join with vouchers for filtering
-    const needsVoucherJoin = physicianId || (showAllPatients !== 'true' && (fromDate || toDate));
+    const needsVoucherJoin = physicianId || (showAllPatients !== 'true' && (fromDate || toDate)) || isTotalTca === 'true';
 
     if (needsVoucherJoin) {
       // If we are filtering by TCA date or physician, we need to base the list on the vouchers that MATCH those filters.
       let voucherConditions = [];
       
-      if (showAllPatients !== 'true') {
+      if (showAllPatients !== 'true' || isTotalTca === 'true') {
          voucherConditions.push('v.tca_date IS NOT NULL'); // Implicitly care about TCA unless "Show All Patients" is checked
       }
       
@@ -1024,15 +1028,20 @@ app.get('/api/dashboard/patients', authenticateToken, async (req, res) => {
         params.push(physicianId);
         paramIndex++;
       }
-      if (showAllPatients !== 'true' && fromDate) {
-        voucherConditions.push(`v.tca_date >= $${paramIndex}`);
-        params.push(fromDate);
-        paramIndex++;
-      }
-      if (showAllPatients !== 'true' && toDate) {
-        voucherConditions.push(`v.tca_date <= $${paramIndex}`);
-        params.push(toDate);
-        paramIndex++;
+
+      if (isTotalTca === 'true') {
+        voucherConditions.push('v.tca_date >= CURRENT_DATE');
+      } else if (showAllPatients !== 'true') {
+        if (fromDate) {
+          voucherConditions.push(`v.tca_date >= $${paramIndex}`);
+          params.push(fromDate);
+          paramIndex++;
+        }
+        if (toDate) {
+          voucherConditions.push(`v.tca_date <= $${paramIndex}`);
+          params.push(toDate);
+          paramIndex++;
+        }
       }
 
       let patientWhere = patientConditions.length > 0 ? `AND ${patientConditions.join(' AND ')}` : '';
@@ -1102,6 +1111,7 @@ app.get('/api/dashboard/patients', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch patients dashboard data' });
   }
 });
+
 
 app.get('/api/dashboard/summary', authenticateToken, async (req, res) => {
   try {
