@@ -474,7 +474,7 @@ export default function PatientClinicalModal({ isOpen, onClose, patient, apiBase
                     />
                   </div>
                   <button 
-                    onClick={fetchVouchers}
+                    onClick={() => fetchVouchers()}
                     style={{
                       padding: '0.4rem 1rem', backgroundColor: '#4f46e5', color: 'white',
                       border: 'none', borderRadius: '0.4rem', fontWeight: 600, cursor: 'pointer',
@@ -484,7 +484,7 @@ export default function PatientClinicalModal({ isOpen, onClose, patient, apiBase
                     Filter
                   </button>
                   <button 
-                    onClick={() => { setBillingFromDate(''); setBillingToDate(''); fetchVouchers(); }}
+                    onClick={() => { setBillingFromDate(''); setBillingToDate(''); fetchVouchers('', ''); }}
                     style={{
                       padding: '0.4rem 1rem', backgroundColor: 'white', color: '#64748b',
                       border: '1px solid #cbd5e1', borderRadius: '0.4rem', fontWeight: 600, cursor: 'pointer',
@@ -498,7 +498,7 @@ export default function PatientClinicalModal({ isOpen, onClose, patient, apiBase
 
               {vouchers.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '3rem', backgroundColor: 'white', borderRadius: '1rem', border: '1px dashed #cbd5e1' }}>
-                  <p style={{ color: '#94a3b8', margin: 0 }}>No billing history found.</p>
+                  <p style={{ color: '#94a3b8', margin: 0 }}>No medical history found.</p>
                 </div>
               ) : (
                 paginatedVouchers.map((voucher) => (

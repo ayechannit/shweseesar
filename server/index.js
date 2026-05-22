@@ -3362,11 +3362,11 @@ app.get('/api/patients/:id/voucher-items', authenticateToken, async (req, res) =
     `;
     const params = [id];
 
-    if (fromDate) {
+    if (fromDate && !isNaN(Date.parse(fromDate))) {
       params.push(fromDate);
       query += ` AND v.created_at >= $${params.length}`;
     }
-    if (toDate) {
+    if (toDate && !isNaN(Date.parse(toDate))) {
       params.push(toDate + ' 23:59:59');
       query += ` AND v.created_at <= $${params.length}`;
     }
