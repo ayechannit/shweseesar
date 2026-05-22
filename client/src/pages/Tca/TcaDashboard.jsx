@@ -332,7 +332,7 @@ export default function PatientDashboard() {
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: '0.875rem', borderBottom: '1px solid #e2e8f0' }}>TCA Date</th>
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: '0.875rem', borderBottom: '1px solid #e2e8f0' }}>Last Voucher #</th>
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: '0.875rem', borderBottom: '1px solid #e2e8f0' }}>Last Attending Physician</th>
-                <th style={{ padding: '1rem', textAlign: 'center', fontWeight: 600, color: '#475569', fontSize: '0.875rem', borderBottom: '1px solid #e2e8f0' }}>Clinical History</th>
+                <th style={{ padding: '1rem', textAlign: 'center', fontWeight: 600, color: '#475569', fontSize: '0.875rem', borderBottom: '1px solid #e2e8f0' }}>Patient Details</th>
               </tr>
             </thead>
             <tbody>
@@ -443,7 +443,7 @@ export default function PatientDashboard() {
                       <td style={{ padding: '1rem', textAlign: 'center' }}>
                         <button 
                           onClick={() => {
-                            setSelectedPatientForModal({ patient_id: p.patient_id, patient_name: p.patient_name });
+                            setSelectedPatientForModal({ patient_id: p.patient_id, patient_name: p.patient_name, patient_code: p.patient_code });
                             setIsClinicalModalOpen(true);
                           }}
                           style={{
@@ -452,7 +452,7 @@ export default function PatientDashboard() {
                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                             transition: 'all 0.2s'
                           }}
-                          title="View Clinical Details"
+                          title="View Patient Details"
                         >
                           <FileText size={18} />
                         </button>

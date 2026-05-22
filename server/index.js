@@ -3341,6 +3341,46 @@ app.get('/api/reports/detailed-revenue', authenticateToken, async (req, res) => 
 
 // --- Patient Clinical Notes Routes ---
 
+// GET: All voucher items for a patient
+app.get('/api/patients/:id/voucher-items', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { fromDate, toDate } = req.query;
+  
+  try {
+    let query = `
+      SELECT 
+        v.voucher_number, 
+        v.created_at as voucher_date,
+        vi.item_type,
+        vi.name as item_name,
+        vi.quantity,
+        vi.unit_price,
+        vi.subtotal
+      FROM vouchers v
+      JOIN voucher_items vi ON v.id = vi.voucher_id
+      WHERE v.patient_id = $1
+    `;
+    const params = [id];
+
+    if (fromDate) {
+      params.push(fromDate);
+      query += ` AND v.created_at >= $${params.length}`;
+    }
+    if (toDate) {
+      params.push(toDate + ' 23:59:59');
+      query += ` AND v.created_at <= $${params.length}`;
+    }
+
+    query += ` ORDER BY v.created_at DESC, vi.id ASC`;
+    
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('FETCH PATIENT VOUCHER ITEMS ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch patient voucher items' });
+  }
+});
+
 // GET: All clinical notes for a patient
 app.get('/api/patients/:id/clinical-notes', authenticateToken, async (req, res) => {
   const { id } = req.params;
