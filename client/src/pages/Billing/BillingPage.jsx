@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, FileText, Calendar, User, DollarSign, Eye, Printer, Filter, X } from 'lucide-react';
+import { Plus, Search, FileText, Calendar, User, DollarSign, Eye, Printer, Filter, X, RotateCcw, Hash, Stethoscope } from 'lucide-react';
 import VoucherEntry from './VoucherEntry';
 import apiRequest from '../../utils/api';
 
@@ -19,6 +19,17 @@ export default function BillingPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [limit] = useState(10);
+
+  // Filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    voucherno: '',
+    fromdate: '',
+    todate: '',
+    patientcode: '',
+    patientname: '',
+    physician: ''
+  });
 
   useEffect(() => {
     fetchPrintSettings();
@@ -45,7 +56,12 @@ export default function BillingPage() {
   const fetchVouchers = async () => {
     setLoading(true);
     try {
-      const res = await apiRequest(`/billing/vouchers?page=${page}&limit=${limit}`);
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v !== ''))
+      });
+      const res = await apiRequest(`/billing/vouchers?${queryParams.toString()}`);
       if (res && res.ok) {
         const result = await res.json();
         setVouchers(result.data || []);
@@ -101,7 +117,7 @@ export default function BillingPage() {
             doc.write(`
               <html>
                 <head>
-                  <title>Print Voucher - ${data.voucher_number}</title>
+                  <title>Print Voucher - \${data.voucher_number}</title>
                   <style>
                     body { 
                       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -110,10 +126,10 @@ export default function BillingPage() {
                       color: #0f172a;
                     }
                     @page { 
-                      margin: ${printSettings?.margin_top || '10px'} ${printSettings?.margin_right || '10px'} ${printSettings?.margin_bottom || '10px'} ${printSettings?.margin_left || '10px'}; 
+                      margin: \${printSettings?.margin_top || '10px'} \${printSettings?.margin_right || '10px'} \${printSettings?.margin_bottom || '10px'} \${printSettings?.margin_left || '10px'}; 
                     }
                     #printable-voucher { 
-                      width: ${printSettings?.width || '100%'}; 
+                      width: \${printSettings?.width || '100%'}; 
                       margin: 0 auto;
                       background: white;
                     }
@@ -140,7 +156,7 @@ export default function BillingPage() {
                 </head>
                 <body>
                   <div id="printable-voucher">
-                    ${printContent.innerHTML}
+                    \${printContent.innerHTML}
                   </div>
                 </body>
               </html>
@@ -179,19 +195,133 @@ export default function BillingPage() {
     setSelectedVoucher(null);
   };
 
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
+    setFilters(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleFilterSearch = (e) => {
+    if (e) e.preventDefault();
+    setPage(1);
+    fetchVouchers();
+  };
+
+  const handleFilterReset = () => {
+    setFilters({
+      voucherno: '',
+      fromdate: '',
+      todate: '',
+      patientcode: '',
+      patientname: '',
+      physician: ''
+    });
+    setPage(1);
+    setTimeout(() => fetchVouchers(), 0);
+  };
+
   return (
     <div className="billing-page">
       {view === 'list' ? (
         <>
-          <div className="page-header">
+          <div className="page-header" style={{ marginBottom: '1.5rem' }}>
             <div>
               <h1 className="page-title">Vouchers & Billing</h1>
-              <p style={{ color: '#64748b', fontSize: '0.875rem' }}>View and manage clinic sales and billing records.</p>
+              <p style={{ color: '#64748b', fontSize: '0.8125rem', marginTop: '0.25rem' }}>View and manage clinic sales and billing records.</p>
             </div>
-            <button className="btn btn-primary" onClick={() => setView('create')}>
-              <Plus size={18} /> New Voucher
-            </button>
+            <div className="flex gap-2">
+              <button 
+                className={`btn \${showFilters ? 'btn-primary' : 'btn-outline'}`} 
+                style={{ height: '38px', fontSize: '0.8125rem' }}
+                onClick={() => setShowFilters(!showFilters)}
+              >
+                <Filter size={16} /> {showFilters ? 'Hide Filters' : 'Filters'}
+              </button>
+              <button className="btn btn-primary" style={{ height: '38px', fontSize: '0.8125rem' }} onClick={() => setView('create')}>
+                <Plus size={16} /> New Voucher
+              </button>
+            </div>
           </div>
+
+          {showFilters && (
+            <div className="card" style={{ marginBottom: '1.5rem', padding: '1.5rem' }}>
+              <form onSubmit={handleFilterSearch} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', alignItems: 'end' }}>
+                <div>
+                  <label className="form-label">Voucher Number</label>
+                  <input
+                    type="text"
+                    name="voucherno"
+                    className="form-control"
+                    placeholder="Search #"
+                    value={filters.voucherno}
+                    onChange={handleFilterChange}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Patient Name</label>
+                  <input
+                    type="text"
+                    name="patientname"
+                    className="form-control"
+                    placeholder="Search name"
+                    value={filters.patientname}
+                    onChange={handleFilterChange}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Patient Code</label>
+                  <input
+                    type="text"
+                    name="patientcode"
+                    className="form-control"
+                    placeholder="Search code"
+                    value={filters.patientcode}
+                    onChange={handleFilterChange}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Physician</label>
+                  <input
+                    type="text"
+                    name="physician"
+                    className="form-control"
+                    placeholder="Search doctor"
+                    value={filters.physician}
+                    onChange={handleFilterChange}
+                  />
+                </div>
+                <div className="lg:col-span-2">
+                  <label className="form-label">Date Range</label>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <input
+                      type="date"
+                      name="fromdate"
+                      className="form-control"
+                      style={{ flex: 1 }}
+                      value={filters.fromdate}
+                      onChange={handleFilterChange}
+                    />
+                    <span style={{ color: '#cbd5e1' }}>-</span>
+                    <input
+                      type="date"
+                      name="todate"
+                      className="form-control"
+                      style={{ flex: 1 }}
+                      value={filters.todate}
+                      onChange={handleFilterChange}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button type="button" className="btn btn-outline" style={{ flex: 1, height: '42px' }} onClick={handleFilterReset}>
+                    <RotateCcw size={16} />
+                  </button>
+                  <button type="submit" className="btn btn-primary" style={{ flex: 2, height: '42px' }}>
+                    <Search size={18} /> Search
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
 
           <div className="card overflow-hidden">
             <div className="table-responsive">
@@ -222,7 +352,9 @@ export default function BillingPage() {
                       </td>
                       <td>
                         <div style={{ fontWeight: 600 }}>{v.patient_name}</div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{v.patient_code}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                          {v.patient_code} • {v.patient_age ? `${v.patient_age} Years` : 'Age N/A'}
+                        </div>
                       </td>
                       <td>
                         <div style={{ fontWeight: 500, color: '#6366f1' }}>{v.physician_name || 'N/A'}</div>
@@ -291,7 +423,7 @@ export default function BillingPage() {
                     <div style={{ marginBottom: '2rem', borderBottom: '2px solid #f1f5f9', paddingBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         {printSettings?.icon_path && (
-                          <img src={`${API_BASE.replace('/api', '')}/uploads/${printSettings.icon_path}`} alt="Logo" style={{ width: '60px', height: '60px', objectFit: 'contain' }} />
+                          <img src={`\${API_BASE.replace('/api', '')}/uploads/\${printSettings.icon_path}`} alt="Logo" style={{ width: '60px', height: '60px', objectFit: 'contain' }} />
                         )}
                         <div>
                           {printSettings?.address && printSettings.address.includes('\n') ? (
@@ -414,6 +546,13 @@ export default function BillingPage() {
           onCancel={() => setView('list')}
         />
       )}
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes slideDown { 
+          from { transform: translateY(-10px); opacity: 0; } 
+          to { transform: translateY(0); opacity: 1; } 
+        }
+      `}} />
     </div>
   );
 }

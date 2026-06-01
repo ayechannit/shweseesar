@@ -9,6 +9,7 @@ export default function StockManagement() {
   const [subcategories, setSubcategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Pagination state
   const [page, setPage] = useState(1);
@@ -57,12 +58,12 @@ export default function StockManagement() {
 
   useEffect(() => {
     setPage(1); // Reset to page 1 when filter changes
-  }, [categoryFilter]);
+  }, [categoryFilter, searchQuery]);
 
   useEffect(() => {
     fetchItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryFilter, page]);
+  }, [categoryFilter, searchQuery, page]);
 
   const fetchCategories = async () => {
     try {
@@ -94,6 +95,7 @@ export default function StockManagement() {
     try {
       let url = `/stock/items?page=${page}&limit=${limit}`;
       if (categoryFilter) url += `&category_id=${categoryFilter}`;
+      if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
       
       const res = await apiRequest(url);
       const result = await res.json();
@@ -403,13 +405,25 @@ export default function StockManagement() {
 
       {/* Filters */}
       <div className="card" style={{ marginBottom: '1.5rem', padding: '1rem' }}>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <Search size={20} style={{ color: '#64748b' }} />
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', flex: '1', minWidth: '250px' }}>
+            <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+            <input 
+              type="text" 
+              className="form-control" 
+              placeholder="Search by name or item code..." 
+              style={{ paddingLeft: '2.75rem' }}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#64748b', marginRight: '0.5rem' }}>Category:</span>
             <button 
               className={`btn ${categoryFilter === '' ? 'btn-primary' : 'btn-outline'}`} 
               onClick={() => setCategoryFilter('')}
-              style={{ fontSize: '0.75rem' }}
+              style={{ fontSize: '0.75rem', padding: '0.5rem 1rem' }}
             >
               All
             </button>
@@ -418,7 +432,7 @@ export default function StockManagement() {
                 key={cat.id} 
                 className={`btn ${categoryFilter == cat.id ? 'btn-primary' : 'btn-outline'}`}
                 onClick={() => setCategoryFilter(cat.id)}
-                style={{ fontSize: '0.75rem' }}
+                style={{ fontSize: '0.75rem', padding: '0.5rem 1rem' }}
               >
                 {cat.name}
               </button>

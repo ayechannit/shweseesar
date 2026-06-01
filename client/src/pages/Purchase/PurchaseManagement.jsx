@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, Plus, Eye, X, AlertTriangle, ShoppingBag, Search } from 'lucide-react';
+import { Truck, Plus, Eye, X, AlertTriangle, ShoppingBag, Search, Edit } from 'lucide-react';
 
 import apiRequest from '../../utils/api';
 
@@ -9,8 +9,16 @@ export default function PurchaseManagement() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
+  // Filter State
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [invoiceNoFilter, setInvoiceNoFilter] = useState('');
+  const [supplierFilter, setSupplierFilter] = useState('');
+
   // Modals
   const [isEntryOpen, setIsEntryOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
 
@@ -52,16 +60,25 @@ export default function PurchaseManagement() {
   });
 
   useEffect(() => {
-    fetchPurchases();
     fetchSuppliers();
     fetchStockItems();
+  }, []);
+
+  useEffect(() => {
+    fetchPurchases();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   const fetchPurchases = async () => {
     setLoading(true);
     try {
-      const res = await apiRequest(`/purchases?page=${page}&limit=10`);
+      let url = `/purchases?page=${page}&limit=10`;
+      if (fromDate) url += `&from_date=${fromDate}`;
+      if (toDate) url += `&to_date=${toDate}`;
+      if (invoiceNoFilter) url += `&invoice_no=${invoiceNoFilter}`;
+      if (supplierFilter) url += `&supplier_id=${supplierFilter}`;
+
+      const res = await apiRequest(url);
       const data = await res.json();
       setPurchases(data.data || []);
       setTotalPages(data.totalPages || 1);
@@ -69,6 +86,26 @@ export default function PurchaseManagement() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSearch = () => {
+    if (page === 1) {
+      fetchPurchases();
+    } else {
+      setPage(1);
+    }
+  };
+
+  const handleClearFilters = () => {
+    setFromDate('');
+    setToDate('');
+    setInvoiceNoFilter('');
+    setSupplierFilter('');
+    if (page === 1) {
+      fetchPurchases();
+    } else {
+      setPage(1);
     }
   };
 
@@ -110,6 +147,33 @@ export default function PurchaseManagement() {
       setIsViewOpen(true);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const editPurchase = async (id) => {
+    try {
+      const res = await apiRequest(`/purchases/${id}`);
+      const data = await res.json();
+      
+      // Populate form
+      setSupplierId(data.supplier_id);
+      setSupplierSearch(data.supplier_name);
+      setPaymentMethod(data.payment_method);
+      setNotes(data.notes || '');
+      setPaidAmount(parseFloat(data.paid_amount) || 0);
+      setItems(data.items.map(item => ({
+        ...item,
+        purchase_price: parseFloat(item.purchase_price),
+        subtotal: parseFloat(item.subtotal),
+        expiry_date: item.expiry_date ? item.expiry_date.split('T')[0] : ''
+      })));
+      
+      setEditingId(id);
+      setIsEditMode(true);
+      setIsEntryOpen(true);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to fetch purchase details for editing");
     }
   };
 
@@ -240,6 +304,19 @@ export default function PurchaseManagement() {
     setItems(newItems);
   };
 
+  const updateItemBatch = (index, val) => {
+    const newItems = [...items];
+    newItems[index] = { ...newItems[index], batch_number: val };
+    setItems(newItems);
+  };
+
+  const updateItemExpiry = (index, val) => {
+    const newItems = [...items];
+    const formattedDate = val ? val.split('T')[0] : '';
+    newItems[index] = { ...newItems[index], expiry_date: formattedDate };
+    setItems(newItems);
+  };
+
   const totalAmount = items.reduce((sum, item) => sum + (parseFloat(item.subtotal) || 0), 0);
   const balanceAmount = totalAmount - (parseFloat(paidAmount) || 0);
 
@@ -297,20 +374,27 @@ export default function PurchaseManagement() {
     };
 
     try {
-      const res = await apiRequest('/purchases', {
-        method: 'POST',
+      const url = isEditMode ? `/purchases/${editingId}` : '/purchases';
+      const method = isEditMode ? 'PUT' : 'POST';
+
+      const res = await apiRequest(url, {
+        method: method,
         body: JSON.stringify(payload)
       });
       if (res.ok) {
         setIsEntryOpen(false);
+        setIsEditMode(false);
+        setEditingId(null);
         fetchPurchases();
         // Reset form
         setSupplierId('');
+        setSupplierSearch('');
         setItems([]);
         setPaidAmount(0);
         setNotes('');
       } else {
-        alert("Failed to save purchase");
+        const errorData = await res.json();
+        alert(errorData.error || "Failed to save purchase");
       }
     } catch (err) {
       console.error(err);
@@ -323,9 +407,43 @@ export default function PurchaseManagement() {
       <div className="page-header">
         <h1 className="page-title">Purchases</h1>
         <div className="header-actions">
-          <button className="btn btn-primary" onClick={() => setIsEntryOpen(true)}>
+          <button className="btn btn-primary" onClick={() => { setIsEditMode(false); setEditingId(null); setSupplierId(''); setSupplierSearch(''); setItems([]); setPaidAmount(0); setNotes(''); setIsEntryOpen(true); }}>
             <Plus size={16} /> New Purchase Invoice
           </button>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: '1.5rem', padding: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', alignItems: 'end' }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" style={{ fontSize: '0.8rem' }}>From Date</label>
+            <input type="date" className="form-control" value={fromDate} onChange={e => setFromDate(e.target.value)} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" style={{ fontSize: '0.8rem' }}>To Date</label>
+            <input type="date" className="form-control" value={toDate} onChange={e => setToDate(e.target.value)} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" style={{ fontSize: '0.8rem' }}>Invoice No.</label>
+            <input type="text" className="form-control" placeholder="Search Invoice..." value={invoiceNoFilter} onChange={e => setInvoiceNoFilter(e.target.value)} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" style={{ fontSize: '0.8rem' }}>Supplier</label>
+            <select className="form-control" value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)}>
+              <option value="">All Suppliers</option>
+              {suppliers.map(s => (
+                <option key={s.id} value={s.id}>{s.company_name}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn btn-primary" onClick={handleSearch} style={{ flex: 1 }}>
+              <Search size={16} /> Search
+            </button>
+            <button className="btn btn-outline" onClick={handleClearFilters} title="Clear Filters">
+              <X size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -369,6 +487,9 @@ export default function PurchaseManagement() {
                           <button className="btn btn-outline" onClick={() => viewPurchase(p.id)} style={{ padding: '0.25rem 0.5rem', color: '#2563eb' }}>
                             <Eye size={14} /> View
                           </button>
+                          <button className="btn btn-outline" onClick={() => editPurchase(p.id)} style={{ padding: '0.25rem 0.5rem', color: '#059669' }}>
+                            <Edit size={14} /> Edit
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -397,9 +518,9 @@ export default function PurchaseManagement() {
           <div className="modal" style={{ maxWidth: '1200px', width: '95%', borderRadius: '1.25rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', border: '1px solid #e2e8f0', padding: 0, overflow: 'hidden' }}>
             <div className="modal-header" style={{ backgroundColor: '#f8fafc', padding: '1.5rem 2rem', borderBottom: '1px solid #e2e8f0' }}>
               <h2 className="modal-title" style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <ShoppingBag size={20} color="#4f46e5" /> New Purchase Entry
+                <ShoppingBag size={20} color="#4f46e5" /> {isEditMode ? 'Edit Purchase Entry' : 'New Purchase Entry'}
               </h2>
-              <button className="close-btn" onClick={() => setIsEntryOpen(false)} style={{ background: '#f1f5f9', border: 'none', padding: '0.5rem', borderRadius: '50%', color: '#64748b', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => Object.assign(e.currentTarget.style, { background: '#e2e8f0', color: '#0f172a' })} onMouseOut={e => Object.assign(e.currentTarget.style, { background: '#f1f5f9', color: '#64748b' })}>
+              <button className="close-btn" onClick={() => { setIsEntryOpen(false); setIsEditMode(false); setEditingId(null); setSupplierId(''); setSupplierSearch(''); setItems([]); setPaidAmount(0); setNotes(''); }} style={{ background: '#f1f5f9', border: 'none', padding: '0.5rem', borderRadius: '50%', color: '#64748b', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => Object.assign(e.currentTarget.style, { background: '#e2e8f0', color: '#0f172a' })} onMouseOut={e => Object.assign(e.currentTarget.style, { background: '#f1f5f9', color: '#64748b' })}>
                 <X size={20} />
               </button>
             </div>
@@ -586,6 +707,7 @@ export default function PurchaseManagement() {
                         <tr>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Item</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Batch</th>
+                          <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Expiry</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', textAlign: 'right' }}>Qty</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', textAlign: 'right' }}>Price</th>
                           <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', textAlign: 'right' }}>Subtotal</th>
@@ -594,12 +716,42 @@ export default function PurchaseManagement() {
                       </thead>
                       <tbody>
                         {items.length === 0 ? (
-                          <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8', fontSize: '0.875rem' }}>No items added to invoice yet.</td></tr>
+                          <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8', fontSize: '0.875rem' }}>No items added to invoice yet.</td></tr>
                         ) : (
                           items.map((item, idx) => (
                             <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                               <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', fontWeight: 600, color: '#1e293b' }}>{item.item_name}</td>
-                              <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', color: '#64748b' }}>{item.batch_number || '-'}</td>
+                              <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', color: '#64748b' }}>
+                                <input 
+                                  type="text" 
+                                  value={item.batch_number || ''} 
+                                  onChange={(e) => updateItemBatch(idx, e.target.value)}
+                                  placeholder="Batch..."
+                                  style={{ 
+                                    width: '100px', 
+                                    padding: '0.25rem 0.5rem', 
+                                    borderRadius: '0.25rem', 
+                                    border: '1px solid #cbd5e1',
+                                    outline: 'none',
+                                    fontSize: '0.75rem'
+                                  }}
+                                />
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', color: '#64748b' }}>
+                                <input 
+                                  type="date" 
+                                  value={item.expiry_date ? item.expiry_date.split('T')[0] : ''} 
+                                  onChange={(e) => updateItemExpiry(idx, e.target.value)}
+                                  style={{ 
+                                    width: '120px', 
+                                    padding: '0.25rem 0.5rem', 
+                                    borderRadius: '0.25rem', 
+                                    border: '1px solid #cbd5e1',
+                                    outline: 'none',
+                                    fontSize: '0.75rem'
+                                  }}
+                                />
+                              </td>
                               <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', fontWeight: 600, color: '#1e293b', textAlign: 'right' }}>
                                 <input 
                                   type="number" 
@@ -708,7 +860,7 @@ export default function PurchaseManagement() {
                     onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 15px 20px -5px rgba(16, 185, 129, 0.4)'; }}
                     onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(16, 185, 129, 0.3)'; }}
                   >
-                    Confirm Purchase
+                    {isEditMode ? 'Update Purchase' : 'Confirm Purchase'}
                   </button>
                   <button 
                     type="button" 
@@ -764,7 +916,7 @@ export default function PurchaseManagement() {
                     <tr key={item.id}>
                       <td>{item.item_name}</td>
                       <td>{item.batch_number || '-'}</td>
-                      <td>{item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : '-'}</td>
+                      <td>{item.expiry_date ? item.expiry_date.split('T')[0] : '-'}</td>
                       <td>{item.quantity}</td>
                       <td>{parseFloat(item.purchase_price).toLocaleString()}</td>
                       <td>{parseFloat(item.subtotal).toLocaleString()}</td>

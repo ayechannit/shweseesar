@@ -8,6 +8,8 @@ export default function StockBalanceReport() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
+  const [filterCategory, setFilterCategory] = useState('Pharmacy');
+
   useEffect(() => {
     fetchStockItems();
   }, []);
@@ -15,11 +17,10 @@ export default function StockBalanceReport() {
   const fetchStockItems = async () => {
     setLoading(true);
     try {
-      // Fetching with a high limit to get a comprehensive report
-      const res = await apiRequest('/stock/items?limit=5000');
+      const res = await apiRequest('/reports/stock-balance');
       if (res.ok) {
         const data = await res.json();
-        setItems(data.data || []);
+        setItems(data || []);
       }
     } catch (err) {
       console.error('Failed to fetch stock balance data:', err);
@@ -29,18 +30,20 @@ export default function StockBalanceReport() {
   };
 
   const filteredItems = items.filter(item => {
-    const isPharmacy = (item.category_name || '').toLowerCase() === 'pharmacy';
     const matchesSearch = 
       (item.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.item_code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.category_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+      (item.item_code || '').toLowerCase().includes(searchQuery.toLowerCase());
     
-    return isPharmacy && matchesSearch;
+    const matchesCategory = filterCategory === 'all' || (item.category_name || '').toLowerCase() === filterCategory.toLowerCase();
+    
+    return matchesSearch && matchesCategory;
   });
 
   const totalValuation = filteredItems.reduce((sum, item) => {
-    return sum + (parseInt(item.total_quantity || 0) * parseFloat(item.default_purchase_price || 0));
+    return sum + parseFloat(item.total_value || 0);
   }, 0);
+
+  const categories = ['all', ...new Set(items.map(i => i.category_name))].filter(Boolean);
 
   const handlePrint = () => {
     window.print();
@@ -56,6 +59,16 @@ export default function StockBalanceReport() {
         </div>
         
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <select 
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+            style={{ padding: '0.6rem 1rem', borderRadius: '0.75rem', border: '1px solid #cbd5e1', outline: 'none', backgroundColor: 'white', fontWeight: 600 }}
+          >
+            {categories.map(cat => (
+              <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+            ))}
+          </select>
+
           <div style={{ position: 'relative' }}>
             <input 
               type="text" 
@@ -120,8 +133,8 @@ export default function StockBalanceReport() {
                 filteredItems.map((item, idx) => {
                   const qty = parseInt(item.total_quantity) || 0;
                   const minLvl = parseInt(item.min_stock_level) || 0;
-                  const cost = parseFloat(item.default_purchase_price) || 0;
-                  const val = qty * cost;
+                  const cost = parseFloat(item.avg_cost) || 0;
+                  const val = parseFloat(item.total_value) || 0;
                   const isLow = qty <= minLvl;
 
                   return (

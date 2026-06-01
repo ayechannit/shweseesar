@@ -757,7 +757,8 @@ app.get('/api/dashboard/inventory', authenticateToken, async (req, res) => {
       totalStockValueData,
       lowStockData,
       expiringData,
-      deadStockData
+      deadStockData,
+      expiryAnalyticsData
     ] = await Promise.all([
       db.query(`
         SELECT COALESCE(SUM(quantity * purchase_price), 0) as total_stock_value
@@ -799,14 +800,40 @@ app.get('/api/dashboard/inventory', authenticateToken, async (req, res) => {
           (SELECT MAX(transaction_date) FROM stock_transactions WHERE item_id = si.id AND type = 'OUT') IS NULL
         )
         ORDER BY current_stock DESC
+      `),
+
+      // Comprehensive Expiry Analytics
+      db.query(`
+        SELECT 
+          COUNT(*) FILTER (WHERE expiry_date < CURRENT_DATE) as expired_count,
+          SUM(quantity * purchase_price) FILTER (WHERE expiry_date < CURRENT_DATE) as expired_value,
+
+          COUNT(*) FILTER (WHERE expiry_date >= CURRENT_DATE AND expiry_date <= CURRENT_DATE + INTERVAL '30 days') as soon_30_count,
+          SUM(quantity * purchase_price) FILTER (WHERE expiry_date >= CURRENT_DATE AND expiry_date <= CURRENT_DATE + INTERVAL '30 days') as soon_30_value,
+
+          COUNT(*) FILTER (WHERE expiry_date > CURRENT_DATE + INTERVAL '30 days' AND expiry_date <= CURRENT_DATE + INTERVAL '60 days') as soon_60_count,
+          SUM(quantity * purchase_price) FILTER (WHERE expiry_date > CURRENT_DATE + INTERVAL '30 days' AND expiry_date <= CURRENT_DATE + INTERVAL '60 days') as soon_60_value,
+
+          COUNT(*) FILTER (WHERE expiry_date > CURRENT_DATE + INTERVAL '60 days' AND expiry_date <= CURRENT_DATE + INTERVAL '90 days') as soon_90_count,
+          SUM(quantity * purchase_price) FILTER (WHERE expiry_date > CURRENT_DATE + INTERVAL '60 days' AND expiry_date <= CURRENT_DATE + INTERVAL '90 days') as soon_90_value
+        FROM stock_batches
+        WHERE quantity > 0
       `)
     ]);
+
+    const expiryStats = expiryAnalyticsData.rows[0];
 
     res.json({
       metrics: {
         total_stock_value: parseFloat(totalStockValueData.rows[0].total_stock_value),
         low_stock_items: lowStockData.rows.length,
-        expiring_items: expiringData.rows.length
+        expiring_items: expiringData.rows.length,
+        expiry_stats: {
+          expired: { count: parseInt(expiryStats.expired_count) || 0, value: parseFloat(expiryStats.expired_value) || 0 },
+          soon_30: { count: parseInt(expiryStats.soon_30_count) || 0, value: parseFloat(expiryStats.soon_30_value) || 0 },
+          soon_60: { count: parseInt(expiryStats.soon_60_count) || 0, value: parseFloat(expiryStats.soon_60_value) || 0 },
+          soon_90: { count: parseInt(expiryStats.soon_90_count) || 0, value: parseFloat(expiryStats.soon_90_value) || 0 }
+        }
       },
       reports: {
         low_stock_report: lowStockData.rows,
@@ -814,6 +841,7 @@ app.get('/api/dashboard/inventory', authenticateToken, async (req, res) => {
         dead_stock: deadStockData.rows
       }
     });
+
   } catch (err) {
     console.error('INVENTORY DASHBOARD ERROR:', err);
     res.status(500).json({ error: 'Failed to fetch inventory dashboard data' });
@@ -1411,7 +1439,8 @@ app.get('/api/reports/stock', authenticateToken, async (req, res) => {
       valuation,
       stockMovement,
       itemProfitability,
-      purchaseSummary
+      purchaseSummary,
+      stockAdditionBreakdown
     ] = await Promise.all([
       // Detailed Low Stock
       db.query(`
@@ -1461,7 +1490,22 @@ app.get('/api/reports/stock', authenticateToken, async (req, res) => {
         JOIN suppliers s ON p.supplier_id = s.id
         WHERE p.created_at >= $1 AND p.created_at <= $2
         GROUP BY s.id, s.company_name
-        ORDER BY total_purchased DESC`, [start, end])
+        ORDER BY total_purchased DESC`, [start, end]),
+      // Stock Addition Breakdown (Purchased vs Initial vs Adjustment)
+      db.query(`
+        SELECT 
+          CASE 
+            WHEN reason ILIKE '%Purchase%' THEN 'Purchased'
+            WHEN reason ILIKE '%Initial Stock%' THEN 'Initial Import'
+            ELSE 'Manual Adjustment'
+          END as source,
+          SUM(ABS(quantity)) as total_qty,
+          SUM(ABS(quantity) * COALESCE(sb.purchase_price, 0)) as total_value
+        FROM stock_transactions st
+        LEFT JOIN stock_batches sb ON st.batch_id = sb.id
+        WHERE st.type = 'IN' AND st.transaction_date >= $1 AND st.transaction_date <= $2
+        GROUP BY source
+        ORDER BY total_value DESC`, [start, end])
     ]);
 
     res.json({
@@ -1470,7 +1514,8 @@ app.get('/api/reports/stock', authenticateToken, async (req, res) => {
       valuation: parseFloat(valuation.rows[0].total_value) || 0,
       stockMovement: stockMovement.rows,
       itemProfitability: itemProfitability.rows,
-      purchaseSummary: purchaseSummary.rows
+      purchaseSummary: purchaseSummary.rows,
+      additionBreakdown: stockAdditionBreakdown.rows
     });
   } catch (err) {
     console.error('STOCK REPORT ERROR:', err);
@@ -1534,6 +1579,34 @@ app.get('/api/reports/patients', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('PATIENT REPORT ERROR:', err);
     res.status(500).json({ error: 'Failed to fetch patient report' });
+  }
+});
+
+// GET: Stock Balance Report with accurate valuation
+app.get('/api/reports/stock-balance', authenticateToken, async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        si.id, si.item_code, si.name, ic.name as category_name, isc.name as subcategory_name, si.unit, si.min_stock_level,
+        COALESCE(SUM(sb.quantity), 0) as total_quantity,
+        COALESCE(SUM(sb.quantity * sb.purchase_price), 0) as total_value,
+        CASE 
+          WHEN SUM(sb.quantity) > 0 THEN SUM(sb.quantity * sb.purchase_price) / SUM(sb.quantity)
+          ELSE si.default_purchase_price 
+        END as avg_cost
+      FROM stock_items si
+      LEFT JOIN item_subcategories isc ON si.subcategory_id = isc.id
+      LEFT JOIN item_categories ic ON isc.category_id = ic.id
+      LEFT JOIN stock_batches sb ON si.id = sb.item_id AND sb.quantity > 0
+      WHERE si.is_active = true
+      GROUP BY si.id, ic.name, isc.name, si.item_code, si.name, si.unit, si.min_stock_level
+      ORDER BY ic.name, si.name
+    `;
+    const result = await db.query(query);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('STOCK BALANCE REPORT API ERROR:', err);
+    res.status(500).json({ error: 'Failed to fetch stock balance report' });
   }
 });
 
@@ -1825,7 +1898,8 @@ app.get('/api/stock/items/export', authenticateToken, async (req, res) => {
     const query = `
       SELECT 
         si.item_code, si.name, ic.name as category, isc.name as subcategory,
-        si.unit, si.min_stock_level, si.default_purchase_price, si.default_sale_price
+        si.unit, si.min_stock_level, si.default_purchase_price, si.default_sale_price,
+        COALESCE((SELECT SUM(sb.quantity) FROM stock_batches sb WHERE sb.item_id = si.id), 0) as current_stock
       FROM stock_items si
       LEFT JOIN item_subcategories isc ON si.subcategory_id = isc.id
       LEFT JOIN item_categories ic ON isc.category_id = ic.id
@@ -1834,13 +1908,13 @@ app.get('/api/stock/items/export', authenticateToken, async (req, res) => {
     `;
     const result = await db.query(query);
     
-    let csvData = 'Item Code,Name,Category,Subcategory,Unit,Min Stock Level,Purchase Price,Sale Price\n';
+    let csvData = 'Item Code,Name,Category,Subcategory,Unit,Min Stock Level,Purchase Price,Sale Price,Current Stock\n';
     result.rows.forEach(row => {
       const name = `"${row.name || ''}"`;
       const cat = `"${row.category || ''}"`;
       const subcat = `"${row.subcategory || ''}"`;
       
-      csvData += `${row.item_code || ''},${name},${cat},${subcat},${row.unit || ''},${row.min_stock_level || 0},${row.default_purchase_price || 0},${row.default_sale_price || 0}\n`;
+      csvData += `${row.item_code || ''},${name},${cat},${subcat},${row.unit || ''},${row.min_stock_level || 0},${row.default_purchase_price || 0},${row.default_sale_price || 0},${row.current_stock || 0}\n`;
     });
 
     res.header('Content-Type', 'text/csv');
@@ -1854,10 +1928,10 @@ app.get('/api/stock/items/export', authenticateToken, async (req, res) => {
 
 // GET: Sample CSV for Stock Items Import
 app.get('/api/stock/items/sample', authenticateToken, (req, res) => {
-  const csvData = 'Item Code,Name,Category,Subcategory,Unit,Min Stock Level,Purchase Price,Sale Price\n' +
-    'ITM-001,Paracetamol 500mg,Pharmacy,General Pharmacy,Tab,100,5.00,8.00\n' +
-    'ITM-002,Bandages,Consumables,Wound Care,Pack,50,10.00,15.00\n';
-  
+  const csvData = 'Item Code,Name,Category,Subcategory,Unit,Min Stock Level,Purchase Price,Sale Price,Current Stock,Batch Number,Expiry Date\n' +
+    'ITM-001,Paracetamol 500mg,Pharmacy,General Pharmacy,Tab,100,5.00,8.00,500,BAT-001,2027-12-31\n' +
+    'ITM-002,Bandages,LABORATORY TEST,Wound Care,Pack,50,10.00,15.00,100,BAT-002,2028-06-30\n';
+
   res.header('Content-Type', 'text/csv');
   res.attachment('sample_stock_items.csv');
   res.send(csvData);
@@ -1888,12 +1962,17 @@ app.post('/api/stock/items/import', authenticateToken, upload.single('file'), (r
         for (const row of results) {
           const itemCode = row['Item Code'];
           const itemName = row['Name'];
-          const categoryName = row['Category'];
+          const categoryName = row['Category'] ? row['Category'].toUpperCase().trim() : '';
           const subcategoryName = row['Subcategory'];
           const unit = row['Unit'] || 'Unit';
           const minStockLevel = parseInt(row['Min Stock Level']) || 0;
           const purchasePrice = parseFloat(row['Purchase Price']) || 0;
           const salePrice = parseFloat(row['Sale Price']) || 0;
+
+          // Current/Initial stock data
+          const initialStock = parseInt(row['Current Stock'] || row['Initial Stock']) || 0;
+          const batchNumber = row['Batch Number'] || 'INITIAL-STOCK';
+          const expiryDate = row['Expiry Date'] || null;
 
           if (!itemCode || !itemName || !categoryName || !subcategoryName) {
             errorCount++;
@@ -1921,8 +2000,10 @@ app.post('/api/stock/items/import', authenticateToken, upload.single('file'), (r
           }
 
           // 3. Upsert Stock Item
+          let itemId;
           const existingItem = await client.query('SELECT id FROM stock_items WHERE item_code = $1', [itemCode]);
           if (existingItem.rows.length > 0) {
+             itemId = existingItem.rows[0].id;
              // Update
              await client.query(`
                 UPDATE stock_items 
@@ -1932,11 +2013,32 @@ app.post('/api/stock/items/import', authenticateToken, upload.single('file'), (r
              `, [itemName, subcategoryId, unit, minStockLevel, purchasePrice, salePrice, req.user.id, itemCode]);
           } else {
              // Insert
-             await client.query(`
+             const insertRes = await client.query(`
                 INSERT INTO stock_items (item_code, name, subcategory_id, unit, min_stock_level, default_purchase_price, default_sale_price, created_by)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id
              `, [itemCode, itemName, subcategoryId, unit, minStockLevel, purchasePrice, salePrice, req.user.id]);
+             itemId = insertRes.rows[0].id;
           }
+
+          // 4. Handle Initial Stock
+          if (initialStock > 0) {
+             // Create stock batch
+             const batchRes = await client.query(`
+                INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id
+             `, [itemId, batchNumber, expiryDate, initialStock, purchasePrice, salePrice, req.user.id]);
+             
+             const batchId = batchRes.rows[0].id;
+
+             // Log transaction
+             await client.query(`
+                INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by)
+                VALUES ($1, $2, 'IN', $3, 'Import Initial Stock', $4)
+             `, [itemId, batchId, initialStock, req.user.id]);
+          }
+
           successCount++;
         }
         await client.query('COMMIT');
@@ -1953,7 +2055,7 @@ app.post('/api/stock/items/import', authenticateToken, upload.single('file'), (r
 
 // List all stock items with current aggregate quantity
 app.get('/api/stock/items', authenticateToken, async (req, res) => {
-  const { subcategory_id, category_id } = req.query; 
+  const { subcategory_id, category_id, search } = req.query; 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
@@ -1970,6 +2072,12 @@ app.get('/api/stock/items', authenticateToken, async (req, res) => {
     } else if (category_id) {
       whereClause += ` AND ic.id = $${paramIndex}`;
       params.push(category_id);
+      paramIndex++;
+    }
+
+    if (search) {
+      whereClause += ` AND (si.name ILIKE $${paramIndex} OR si.item_code ILIKE $${paramIndex})`;
+      params.push(`%${search}%`);
       paramIndex++;
     }
 
@@ -2480,8 +2588,8 @@ app.post('/api/pricing/import', authenticateToken, upload.single('file'), (req, 
 // GET: Sample CSV for Import
 app.get('/api/pricing/sample', authenticateToken, (req, res) => {
   const csvData = 'Item Code,Item Name,Category,Subcategory,Purchase Price,Sale Price,Pricing Method,Markup Percentage\n' +
-    'ITM001,Example Medicine,Pharmacy,General Pharmacy,10.00,12.00,MARKUP_PERCENT,20\n' +
-    'ITM002,Another Item,Pharmacy,Consumables,50.00,65.00,MANUAL,0\n';
+    'ITM001,Example Medicine,PHARMACY,General Pharmacy,10.00,12.00,MARKUP_PERCENT,20\n' +
+    'ITM002,Another Item,LABORATORY TEST,Consumables,50.00,65.00,MANUAL,0\n';
   
   res.header('Content-Type', 'text/csv');
   res.attachment('sample_stock_pricing.csv');
@@ -2677,19 +2785,60 @@ app.get('/api/billing/vouchers', authenticateToken, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
+  const { voucherno, fromdate, todate, patientcode, patientname, physician } = req.query;
 
   try {
-    const countRes = await db.query('SELECT COUNT(*) FROM vouchers');
-    const total = parseInt(countRes.rows[0].count);
+    let whereClauses = [];
+    let queryParams = [];
 
-    const result = await db.query(`
-      SELECT v.*, p.name as patient_name, p.patient_code, doc.name as physician_name
+    if (voucherno) {
+      queryParams.push(`%${voucherno}%`);
+      whereClauses.push(`v.voucher_number ILIKE $${queryParams.length}`);
+    }
+    if (fromdate) {
+      queryParams.push(fromdate);
+      whereClauses.push(`v.created_at >= $${queryParams.length}`);
+    }
+    if (todate) {
+      queryParams.push(`${todate} 23:59:59`);
+      whereClauses.push(`v.created_at <= $${queryParams.length}`);
+    }
+    if (patientcode) {
+      queryParams.push(`%${patientcode}%`);
+      whereClauses.push(`p.patient_code ILIKE $${queryParams.length}`);
+    }
+    if (patientname) {
+      queryParams.push(`%${patientname}%`);
+      whereClauses.push(`p.name ILIKE $${queryParams.length}`);
+    }
+    if (physician) {
+      queryParams.push(`%${physician}%`);
+      whereClauses.push(`doc.name ILIKE $${queryParams.length}`);
+    }
+
+    const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    const countRes = await db.query(`
+      SELECT COUNT(*) 
       FROM vouchers v
       LEFT JOIN patients p ON v.patient_id = p.id
       LEFT JOIN physicians doc ON v.physician_id = doc.id
+      ${whereString}
+    `, queryParams);
+    const total = parseInt(countRes.rows[0].count);
+
+    const dataParams = [...queryParams, limit, offset];
+    const result = await db.query(`
+      SELECT v.*, p.name as patient_name, p.patient_code, 
+             CAST(EXTRACT(YEAR FROM AGE(p.date_of_birth)) AS INTEGER) as patient_age,
+             doc.name as physician_name
+      FROM vouchers v
+      LEFT JOIN patients p ON v.patient_id = p.id
+      LEFT JOIN physicians doc ON v.physician_id = doc.id
+      ${whereString}
       ORDER BY v.created_at DESC
-      LIMIT $1 OFFSET $2
-    `, [limit, offset]);
+      LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}
+    `, dataParams);
 
     res.json({
       data: result.rows,
@@ -3169,38 +3318,155 @@ app.post('/api/billing/referrals/bulk-pay', authenticateToken, async (req, res) 
 
 // --- Purchases Module Routes ---
 
-// GET: All purchases (paginated)
+// GET: All purchases (paginated with filters)
 app.get('/api/purchases', authenticateToken, async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = (page - 1) * limit;
+  const { page = 1, limit = 10, from_date, to_date, invoice_no, supplier_id } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
 
   try {
-    const countRes = await db.query('SELECT COUNT(*) FROM purchases');
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+    let paramIndex = 1;
+
+    if (from_date) {
+      whereClause += ` AND p.created_at >= $${paramIndex}`;
+      params.push(from_date);
+      paramIndex++;
+    }
+    if (to_date) {
+      // Add one day to to_date to include the full day
+      whereClause += ` AND p.created_at <= $${paramIndex}::date + interval '1 day'`;
+      params.push(to_date);
+      paramIndex++;
+    }
+    if (invoice_no) {
+      whereClause += ` AND p.invoice_number ILIKE $${paramIndex}`;
+      params.push(`%${invoice_no}%`);
+      paramIndex++;
+    }
+    if (supplier_id) {
+      whereClause += ` AND p.supplier_id = $${paramIndex}`;
+      params.push(supplier_id);
+      paramIndex++;
+    }
+
+    const countRes = await db.query(`SELECT COUNT(*) FROM purchases p ${whereClause}`, params);
     const total = parseInt(countRes.rows[0].count);
 
+    const queryParams = [...params, parseInt(limit), offset];
     const result = await db.query(`
       SELECT p.*, s.company_name as supplier_name 
       FROM purchases p
       LEFT JOIN suppliers s ON p.supplier_id = s.id
+      ${whereClause}
       ORDER BY p.created_at DESC
-      LIMIT $1 OFFSET $2
-    `, [limit, offset]);
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `, queryParams);
 
     res.json({
       data: result.rows,
       total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit)
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / parseInt(limit))
     });
   } catch (err) {
-    console.error(err);
+    console.error('FETCH PURCHASES ERROR:', err);
     res.status(500).json({ error: 'Failed to fetch purchases' });
   }
 });
 
-// GET: Single purchase details
+// PUT: Update Purchase Invoice
+app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { 
+    supplier_id, items, 
+    total_amount, paid_amount, balance_amount, 
+    payment_method, notes 
+  } = req.body;
+
+  console.log('PUT PURCHASE REQUEST:', { id, supplier_id, total_items: items?.length });
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Fetch existing purchase and verify its invoice number
+    const pRes = await client.query('SELECT * FROM purchases WHERE id = $1', [id]);
+    if (pRes.rows.length === 0) {
+      console.log('PUT PURCHASE: NOT FOUND', id);
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Purchase not found' });
+    }
+    const oldPurchase = pRes.rows[0];
+    const invoice_number = oldPurchase.invoice_number;
+
+    // 2. Safety Check: Verify if any items from this purchase have been sold/used
+    // We find batches linked via stock_transactions for this invoice
+    const transactionsRes = await client.query(`
+      SELECT st.*, sb.quantity as current_batch_qty
+      FROM stock_transactions st
+      JOIN stock_batches sb ON st.batch_id = sb.id
+      WHERE st.reason = $1 AND st.type = 'IN'
+    `, [`Purchase Invoice ${invoice_number}`]);
+
+    for (const st of transactionsRes.rows) {
+      if (st.current_batch_qty < st.quantity) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ 
+          error: `Cannot edit: Some items from batch ${st.batch_id} have already been used or sold.` 
+        });
+      }
+    }
+
+    // 3. Revert: Delete old batches, transactions, and items
+    const batchIds = transactionsRes.rows.map(t => t.batch_id);
+    if (batchIds.length > 0) {
+      await client.query('DELETE FROM stock_transactions WHERE batch_id = ANY($1)', [batchIds]);
+      await client.query('DELETE FROM stock_batches WHERE id = ANY($1)', [batchIds]);
+    }
+    await client.query('DELETE FROM purchase_items WHERE purchase_id = $1', [id]);
+
+    // 4. Update Purchase Record
+    await client.query(`
+      UPDATE purchases 
+      SET supplier_id = $1, total_amount = $2, paid_amount = $3, balance_amount = $4, 
+          payment_method = $5, notes = $6, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7
+    `, [supplier_id, total_amount, paid_amount, balance_amount, payment_method, notes, id]);
+
+    // 5. Insert New Items & Update Stock
+    for (const item of items) {
+      await client.query(`
+        INSERT INTO purchase_items (purchase_id, item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, subtotal, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [id, item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, item.subtotal, req.user.id]);
+
+      const batchRes = await client.query(`
+        INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+      `, [item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, req.user.id]);
+      const batchId = batchRes.rows[0].id;
+
+      await client.query(`
+        INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [item.item_id, batchId, 'IN', item.quantity, `Purchase Invoice ${invoice_number}`, req.user.id]);
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Purchase updated successfully', invoice_number });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PURCHASE UPDATE ERROR:', err);
+    res.status(500).json({ error: 'Failed to update purchase invoice', details: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// GET: Single Purchase details
 app.get('/api/purchases/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {

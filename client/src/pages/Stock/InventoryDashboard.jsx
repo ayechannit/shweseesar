@@ -63,9 +63,42 @@ export default function InventoryDashboard() {
 
       <div className="modern-metrics-grid">
         <MetricCard title="Total Stock Value" value={metrics.total_stock_value} icon={<DollarSign />} color="indigo" currency="MMK" highlight />
-        <MetricCard title="Low Stock Items" value={metrics.low_stock_items} icon={<AlertTriangle />} color="rose" />
-        <MetricCard title="Expiring Items (30d)" value={metrics.expiring_items} icon={<Clock />} color="violet" />
-        <MetricCard title="Dead Stock Items" value={dead_stock.length} icon={<ArchiveX />} color="emerald" />
+        <MetricCard title="Expired Items" value={metrics.expiry_stats?.expired?.count} icon={<ArchiveX />} color="rose" />
+        <MetricCard title="Expiring (30d)" value={metrics.expiry_stats?.soon_30?.count} icon={<Clock />} color="orange" />
+        <MetricCard title="Dead Stock Items" value={dead_stock.length} icon={<AlertTriangle />} color="emerald" />
+      </div>
+
+      {/* Senior Analyst View: Expiry Risk Analysis */}
+      <div className="modern-card mb-12" style={{ padding: '2rem' }}>
+        <div className="modern-card-header">
+          <div>
+            <h3 className="modern-card-title">Expiry Risk Profile</h3>
+            <p className="modern-card-subtitle">Financial impact of aging inventory</p>
+          </div>
+        </div>
+        
+        <div className="expiry-analytics-grid">
+          <div className="expiry-box expired">
+            <span className="expiry-label">ALREADY EXPIRED</span>
+            <div className="expiry-val">{metrics.expiry_stats?.expired?.count} <span className="text-sm opacity-60">Batches</span></div>
+            <div className="expiry-subval">{metrics.expiry_stats?.expired?.value?.toLocaleString()} MMK</div>
+          </div>
+          <div className="expiry-box soon-30">
+            <span className="expiry-label">NEXT 30 DAYS</span>
+            <div className="expiry-val">{metrics.expiry_stats?.soon_30?.count} <span className="text-sm opacity-60">Batches</span></div>
+            <div className="expiry-subval">{metrics.expiry_stats?.soon_30?.value?.toLocaleString()} MMK</div>
+          </div>
+          <div className="expiry-box soon-60">
+            <span className="expiry-label">31 - 60 DAYS</span>
+            <div className="expiry-val">{metrics.expiry_stats?.soon_60?.count} <span className="text-sm opacity-60">Batches</span></div>
+            <div className="expiry-subval">{metrics.expiry_stats?.soon_60?.value?.toLocaleString()} MMK</div>
+          </div>
+          <div className="expiry-box soon-90">
+            <span className="expiry-label">61 - 90 DAYS</span>
+            <div className="expiry-val">{metrics.expiry_stats?.soon_90?.count} <span className="text-sm opacity-60">Batches</span></div>
+            <div className="expiry-subval">{metrics.expiry_stats?.soon_90?.value?.toLocaleString()} MMK</div>
+          </div>
+        </div>
       </div>
 
       <div className="modern-charts-row">
@@ -283,6 +316,18 @@ export default function InventoryDashboard() {
         .pending-lab { font-size: 0.75rem; color: #64748b; font-weight: 600; }
         
         .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem; background: #fff1f2; border-radius: 1.5rem; border: 1px solid #ffe4e6; font-weight: 800; }
+
+        /* --- EXPIRY ANALYTICS --- */
+        .expiry-analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; }
+        .expiry-box { padding: 1.5rem; border-radius: 1.5rem; border: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 0.5rem; }
+        .expiry-label { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em; color: #94a3b8; }
+        .expiry-val { font-size: 1.5rem; font-weight: 900; color: #0f172a; }
+        .expiry-subval { font-size: 0.85rem; font-weight: 700; color: #64748b; }
+        
+        .expiry-box.expired { border-left: 5px solid #f43f5e; background: #fff1f2; }
+        .expiry-box.soon-30 { border-left: 5px solid #f97316; background: #fff7ed; }
+        .expiry-box.soon-60 { border-left: 5px solid #eab308; background: #fefce8; }
+        .expiry-box.soon-90 { border-left: 5px solid #22c55e; background: #f0fdf4; }
 
         .modern-empty-state { display: flex; align-items: center; justify-content: center; height: 200px; color: #94a3b8; font-weight: 600; font-style: italic; }
 

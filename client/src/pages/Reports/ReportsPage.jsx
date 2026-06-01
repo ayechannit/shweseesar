@@ -158,17 +158,52 @@ const StockView = ({ data }) => (
       <div className="card-modern" style={{ padding: '1.5rem', borderLeft: '5px solid #ef4444' }}><span className="metric-label">Low Stock</span><div className="metric-value" style={{ color: '#dc2626' }}>{data.lowStock?.length}</div></div>
       <div className="card-modern" style={{ padding: '1.5rem', borderLeft: '5px solid #f59e0b' }}><span className="metric-label">Expiring Soon</span><div className="metric-value" style={{ color: '#d97706' }}>{data.expiringSoon?.length}</div></div>
     </div>
-    <div className="card-modern"><div style={{ padding: '1.25rem 1.5rem', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}><h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Stock Movement History</h3></div>
+
+    {/* Addition Breakdown - Senior Analyst Insight */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="card-modern">
+        <div style={{ padding: '1.25rem 1.5rem', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Stock Addition Breakdown</h3>
+          <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>Breakdown of how items entered the inventory in this period.</p>
+        </div>
+        <table className="table-modern">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th style={{ textAlign: 'center' }}>Qty Added</th>
+              <th style={{ textAlign: 'right' }}>Value Added</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.additionBreakdown?.map((b, i) => (
+              <tr key={i}>
+                <td style={{ fontWeight: 600 }}>{b.source}</td>
+                <td style={{ textAlign: 'center' }}>{parseInt(b.total_qty).toLocaleString()}</td>
+                <td style={{ textAlign: 'right', fontWeight: 700, color: '#3b82f6' }}>{parseFloat(b.total_value).toLocaleString()}</td>
+              </tr>
+            ))}
+            {(!data.additionBreakdown || data.additionBreakdown.length === 0) && (
+              <tr><td colSpan="3" style={{ textAlign: 'center', color: '#94a3b8' }}>No additions in this period.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card-modern">
+        <div style={{ padding: '1.25rem 1.5rem', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}><h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Profit Margins Analysis</h3></div>
+        <table className="table-modern">
+          <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Sale</th><th style={{ textAlign: 'right' }}>Margin</th><th style={{ textAlign: 'right' }}>%</th></tr></thead>
+          <tbody>{data.itemProfitability?.map((p, i) => <tr key={i}><td>{p.name}</td><td style={{ textAlign: 'right' }}>{parseFloat(p.s_price).toLocaleString()}</td><td style={{ textAlign: 'right' }}>{parseFloat(p.margin_amt).toLocaleString()}</td><td style={{ textAlign: 'right' }}>{p.margin_pct}%</td></tr>)}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div className="card-modern">
+      <div style={{ padding: '1.25rem 1.5rem', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}><h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Stock Movement History</h3></div>
       <div style={{ maxHeight: '400px', overflowY: 'auto' }}><table className="table-modern">
         <thead><tr><th>Timestamp</th><th>Item</th><th>Type</th><th>Qty</th><th>Reason</th></tr></thead>
         <tbody>{data.stockMovement?.map((m, i) => <tr key={i}><td>{new Date(m.date).toLocaleString()}</td><td>{m.item_name}</td><td>{m.type}</td><td>{m.quantity}</td><td>{m.reason}</td></tr>)}</tbody>
       </table></div>
-    </div>
-    <div className="card-modern"><div style={{ padding: '1.25rem 1.5rem', background: '#f0fdf4', borderBottom: '1px solid #dcfce7' }}><h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, color: '#166534' }}>Profit Margins Analysis</h3></div>
-      <table className="table-modern">
-        <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Sale</th><th style={{ textAlign: 'right' }}>Margin</th><th style={{ textAlign: 'right' }}>%</th></tr></thead>
-        <tbody>{data.itemProfitability?.map((p, i) => <tr key={i}><td>{p.name}</td><td style={{ textAlign: 'right' }}>{parseFloat(p.s_price).toLocaleString()}</td><td style={{ textAlign: 'right' }}>{parseFloat(p.margin_amt).toLocaleString()}</td><td style={{ textAlign: 'right' }}>{p.margin_pct}%</td></tr>)}</tbody>
-      </table>
     </div>
   </div>
 );
