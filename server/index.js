@@ -8,6 +8,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { authenticateToken, authorize, JWT_SECRET } = require('./middleware/auth');
+const { uploadToS3, getS3SignedUrl } = require('./s3');
 require('dotenv').config();
 
 const app = express();
@@ -29,10 +30,25 @@ const storage = multer.diskStorage({
 })
 
 const upload = multer({ storage: storage });
+const s3Upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(uploadDir));
+
+// GET: Get S3 signed URL for a file
+app.get('/api/files/signed-url', authenticateToken, async (req, res) => {
+  const { key, name } = req.query;
+  if (!key) return res.status(400).json({ error: 'File key is required' });
+
+  try {
+    const url = await getS3SignedUrl(key, name);
+    res.json({ url });
+  } catch (err) {
+    console.error('SIGNED URL ERROR:', err);
+    res.status(500).json({ error: 'Failed to generate signed URL' });
+  }
+});
 
 // Allowed master data tables to prevent SQL injection
 const ALLOWED_TABLES = [
@@ -71,12 +87,17 @@ app.get('/api/settings/voucher', authenticateToken, async (req, res) => {
   }
 });
 
-app.put('/api/settings/voucher', authenticateToken, authorize(['manage_settings']), upload.single('icon'), async (req, res) => {
+app.put('/api/settings/voucher', authenticateToken, authorize(['manage_settings']), s3Upload.single('icon'), async (req, res) => {
   const { margin_top, margin_right, margin_bottom, margin_left, width, height, address, description } = req.body;
   let icon_path = req.body.icon_path || null;
 
   if (req.file) {
-    icon_path = req.file.filename;
+    try {
+      icon_path = await uploadToS3(req.file);
+    } catch (err) {
+      console.error('S3 ICON UPLOAD ERROR:', err);
+      return res.status(500).json({ error: 'Failed to upload icon to S3' });
+    }
   }
 
   try {
@@ -2939,28 +2960,28 @@ app.post('/api/lab-payments/bulk-pay', authenticateToken, async (req, res) => {
 });
 
 // POST: Upload investigation result
-app.post('/api/investigations/:id/upload', authenticateToken, upload.single('file'), async (req, res) => {
+app.post('/api/investigations/:id/upload', authenticateToken, s3Upload.single('file'), async (req, res) => {
   const { id } = req.params;
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
   try {
-    const filePath = req.file.filename;
+    const fileName = await uploadToS3(req.file);
     const query = `
       UPDATE voucher_items 
       SET result_file_path = $1, status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP, updated_by = $2
       WHERE id = $3 
       RETURNING *
     `;
-    const result = await db.query(query, [filePath, req.user.id, id]);
+    const result = await db.query(query, [fileName, req.user.id, id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Investigation not found' });
     }
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to upload result' });
+    console.error('S3 UPLOAD ERROR:', err);
+    res.status(500).json({ error: 'Failed to upload result to S3' });
   }
 });
 

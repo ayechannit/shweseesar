@@ -42,7 +42,17 @@ export default function VoucherSettings() {
           description: data.description || ''
         });
         if (data.icon_path) {
-          setCurrentIcon(`${API_BASE.replace('/api', '')}/uploads/${data.icon_path}`);
+          try {
+            const signedUrlRes = await apiRequest(`/files/signed-url?key=${data.icon_path}`);
+            if (signedUrlRes.ok) {
+              const { url } = await signedUrlRes.json();
+              setCurrentIcon(url);
+            } else {
+              setCurrentIcon(`${API_BASE.replace('/api', '')}/uploads/${data.icon_path}`);
+            }
+          } catch (err) {
+            setCurrentIcon(`${API_BASE.replace('/api', '')}/uploads/${data.icon_path}`);
+          }
         }
       }
     } catch (err) {
@@ -93,7 +103,17 @@ export default function VoucherSettings() {
         const data = await res.json();
         setSuccessMsg('Settings updated successfully!');
         if (data.icon_path) {
-          setCurrentIcon(`${API_BASE.replace('/api', '')}/uploads/${data.icon_path}`);
+          try {
+            const signedUrlRes = await apiRequest(`/files/signed-url?key=${data.icon_path}`);
+            if (signedUrlRes.ok) {
+              const { url } = await signedUrlRes.json();
+              setCurrentIcon(url);
+            } else {
+              setCurrentIcon(`${API_BASE.replace('/api', '')}/uploads/${data.icon_path}`);
+            }
+          } catch (err) {
+            setCurrentIcon(`${API_BASE.replace('/api', '')}/uploads/${data.icon_path}`);
+          }
         }
         setTimeout(() => setSuccessMsg(''), 3000);
       } else {

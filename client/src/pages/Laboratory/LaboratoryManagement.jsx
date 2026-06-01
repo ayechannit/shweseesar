@@ -179,6 +179,25 @@ export default function LaboratoryManagement() {
 
   const handleDownload = async (filePath, originalName) => {
     try {
+      // First try to get a signed URL from S3
+      // We pass the desired filename to the backend to force a download via Content-Disposition
+      const fileName = originalName || filePath.split('/').pop();
+      const signedUrlRes = await apiRequest(`/files/signed-url?key=${filePath}&name=${encodeURIComponent(fileName)}`);
+      
+      if (signedUrlRes.ok) {
+        const { url } = await signedUrlRes.json();
+        // Since the backend now forces "attachment" via the signed URL, 
+        // simply opening it or using an <a> tag will trigger a download without leaving the site.
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+
+      // Fallback to local uploads if S3 fails or is not configured
       const res = await fetch(`${UPLOAD_BASE}/${filePath}`);
       if (!res.ok) throw new Error('Network response was not ok');
       const blob = await res.blob();
@@ -192,6 +211,7 @@ export default function LaboratoryManagement() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error) {
+      console.error('Download error:', error);
       addNotification('Failed to download file', 'error');
     }
   };
@@ -580,10 +600,19 @@ export default function LaboratoryManagement() {
                               </button>
                             )}
                             {activeTab === 'sent' && (
-                              <label className="btn btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', cursor: 'pointer', color: '#059669', borderColor: '#059669' }}>
-                                <Upload size={14} /> Result
-                                <input type="file" style={{ display: 'none' }} onChange={(e) => handleFileUpload(inv.id, e.target.files[0])} />
-                              </label>
+                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <label className="btn btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', cursor: 'pointer', color: '#059669', borderColor: '#059669' }}>
+                                  <Upload size={14} /> Result
+                                  <input type="file" style={{ display: 'none' }} onChange={(e) => handleFileUpload(inv.id, e.target.files[0])} />
+                                </label>
+                                <button 
+                                  className="btn btn-outline" 
+                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: '#2563eb', borderColor: '#2563eb' }}
+                                  onClick={() => handleStatusUpdate(inv.id, 'COMPLETED')}
+                                >
+                                  <CheckCircle2 size={14} /> Complete
+                                </button>
+                              </div>
                             )}
                             {activeTab === 'completed' && inv.result_file_path && (
                               <button 
