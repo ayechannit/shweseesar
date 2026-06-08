@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, FileText, Calendar, User, DollarSign, Eye, Printer, Filter, X, RotateCcw, Hash, Stethoscope } from 'lucide-react';
+import { Plus, Search, FileText, Calendar, User, DollarSign, Eye, Printer, Filter, X, RotateCcw, Hash, Stethoscope, Edit3 } from 'lucide-react';
 import VoucherEntry from './VoucherEntry';
 import apiRequest from '../../utils/api';
 
@@ -7,6 +7,7 @@ import { API_BASE } from '../../config';
 
 export default function BillingPage() {
   const [view, setView] = useState('list'); // 'list' or 'create'
+  const [editVoucherId, setEditVoucherId] = useState(null);
   const [vouchers, setVouchers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [printSettings, setPrintSettings] = useState(null);
@@ -183,11 +184,17 @@ export default function BillingPage() {
 
   const handleVoucherCreated = async (id) => {
     setView('list');
+    setEditVoucherId(null);
     setPage(1);
     await fetchVouchers();
     setTimeout(() => {
       handleView(id);
     }, 300);
+  };
+
+  const handleEdit = (id) => {
+    setEditVoucherId(id);
+    setView('create');
   };
 
   const closeViewModal = () => {
@@ -379,6 +386,14 @@ export default function BillingPage() {
                              <span>View</span>
                            </button>
                            <button 
+                             className="action-btn edit-btn" 
+                             title="Edit Voucher" 
+                             onClick={() => handleEdit(v.id)}
+                           >
+                             <Edit3 size={16} />
+                             <span>Edit</span>
+                           </button>
+                           <button 
                              className="action-btn print-btn" 
                              title="Print Voucher" 
                              onClick={() => handlePrint(v.id)}
@@ -542,8 +557,12 @@ export default function BillingPage() {
         </>
       ) : (
         <VoucherEntry 
+          editVoucherId={editVoucherId}
           onSave={handleVoucherCreated}
-          onCancel={() => setView('list')}
+          onCancel={() => {
+            setView('list');
+            setEditVoucherId(null);
+          }}
         />
       )}
 

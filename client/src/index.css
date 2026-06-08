@@ -541,6 +541,20 @@ tr:last-child td {
   box-shadow: 0 4px 6px -1px rgba(30, 41, 59, 0.2);
 }
 
+.edit-btn {
+  background-color: #fef3c7;
+  color: #d97706;
+  border-color: #fde68a;
+}
+
+.edit-btn:hover {
+  background-color: #d97706;
+  color: white;
+  border-color: #d97706;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(217, 119, 6, 0.2);
+}
+
 .action-btn svg {
   flex-shrink: 0;
 }

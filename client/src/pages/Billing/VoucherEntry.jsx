@@ -4,7 +4,7 @@ import AddPatientModal from '../../components/Modals/AddPatientModal';
 import { API_BASE } from '../../config';
 import apiRequest from '../../utils/api';
 
-export default function VoucherEntry({ onSave, onCancel }) {
+export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
   // --- Master Data ---
   const [patients, setPatients] = useState([]);
   const [physicians, setPhysicians] = useState([]);
@@ -55,6 +55,50 @@ export default function VoucherEntry({ onSave, onCancel }) {
   useEffect(() => {
     fetchMasterData();
   }, []);
+
+  useEffect(() => {
+    if (editVoucherId) {
+      fetchVoucherToEdit();
+    }
+  }, [editVoucherId]);
+
+  const fetchVoucherToEdit = async () => {
+    setLoading(true);
+    try {
+      const res = await apiRequest(`/billing/vouchers/${editVoucherId}`);
+      if (res && res.ok) {
+        const v = await res.json();
+        setSelectedPatient({
+          id: v.patient_id,
+          name: v.patient_name,
+          patient_code: v.patient_code,
+          phone_number: v.patient_phone
+        });
+        setSelectedPhysicianId(v.physician_id || '');
+        const mappedItems = v.items.map(i => ({
+          ...i,
+          is_lab: i.item_type === 'INVESTIGATION'
+        }));
+        setSelectedItems(mappedItems);
+        const mappedReferrals = v.referrals.map(r => ({
+          referred_person_id: r.referred_person_id,
+          percentage: parseFloat(r.percentage) || 0,
+          amount: parseFloat(r.amount) || 0,
+          referral_type: r.referral_type || 'Physician'
+        }));
+        setReferrals(mappedReferrals);
+        setDiscount(parseFloat(v.discount_amount) || 0);
+        setPaymentMethod(v.payment_method || 'Cash');
+        setNotes(v.notes || '');
+        setTcaDate(v.tca_date ? v.tca_date.substring(0, 10) : '');
+      }
+    } catch (err) {
+      console.error('Failed to load voucher for edit:', err);
+      alert('Failed to load voucher details for editing');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchMasterData = async () => {
     try {
@@ -219,8 +263,10 @@ export default function VoucherEntry({ onSave, onCancel }) {
 
     setLoading(true);
     try {
-      const res = await apiRequest('/billing/vouchers', {
-        method: 'POST',
+      const url = editVoucherId ? `/billing/vouchers/${editVoucherId}` : '/billing/vouchers';
+      const method = editVoucherId ? 'PUT' : 'POST';
+      const res = await apiRequest(url, {
+        method,
         body: JSON.stringify({
           patient_id: selectedPatient.id,
           physician_id: selectedPhysicianId || null,
@@ -240,7 +286,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
         onSave(data.id);
       } else if (res) {
         const err = await res.json();
-        alert(err.error || 'Failed to create voucher');
+        alert(err.error || `Failed to ${editVoucherId ? 'update' : 'create'} voucher`);
       }
     } catch (err) {
       alert('Server error');
@@ -282,7 +328,7 @@ export default function VoucherEntry({ onSave, onCancel }) {
             <Receipt size={28} />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>Create Voucher</h1>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>{editVoucherId ? 'Edit Voucher' : 'Create Voucher'}</h1>
             <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Transaction processing and inventory deduction</p>
           </div>
         </div>

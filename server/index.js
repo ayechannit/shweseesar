@@ -769,7 +769,7 @@ app.get('/api/dashboard/inventory', authenticateToken, async (req, res) => {
       db.query(`
         SELECT si.id, si.item_code, si.name, si.unit, si.min_stock_level, COALESCE(SUM(sb.quantity), 0) as current_stock
         FROM stock_items si
-        LEFT JOIN stock_batches sb ON si.id = sb.item_id AND sb.quantity > 0
+        LEFT JOIN stock_batches sb ON si.id = sb.item_id
         WHERE si.is_active = true
         GROUP BY si.id, si.item_code, si.name, si.unit, si.min_stock_level
         HAVING COALESCE(SUM(sb.quantity), 0) < si.min_stock_level
@@ -1465,11 +1465,11 @@ app.get('/api/reports/stock', authenticateToken, async (req, res) => {
         WHERE quantity > 0`),
       // Stock Movement (IN/OUT Log)
       db.query(`
-        SELECT st.transaction_date as date, si.name as item_name, st.type, st.quantity, st.reason
-        FROM stock_transactions st
-        JOIN stock_items si ON st.item_id = si.id
-        WHERE st.transaction_date >= $1 AND st.transaction_date <= $2
-        ORDER BY st.transaction_date DESC`, [start, end]),
+       SELECT st.transaction_date as date, si.item_code, si.name as item_name, st.type, st.quantity, st.reason
+       FROM stock_transactions st
+       JOIN stock_items si ON st.item_id = si.id
+       WHERE st.transaction_date >= $1 AND st.transaction_date <= $2
+       ORDER BY st.transaction_date DESC`, [start, end]),
       // Item Profitability
       db.query(`
         SELECT 
@@ -1499,8 +1499,8 @@ app.get('/api/reports/stock', authenticateToken, async (req, res) => {
             WHEN reason ILIKE '%Initial Stock%' THEN 'Initial Import'
             ELSE 'Manual Adjustment'
           END as source,
-          SUM(ABS(quantity)) as total_qty,
-          SUM(ABS(quantity) * COALESCE(sb.purchase_price, 0)) as total_value
+          SUM(ABS(st.quantity)) as total_qty,
+          SUM(ABS(st.quantity) * COALESCE(sb.purchase_price, 0)) as total_value
         FROM stock_transactions st
         LEFT JOIN stock_batches sb ON st.batch_id = sb.id
         WHERE st.type = 'IN' AND st.transaction_date >= $1 AND st.transaction_date <= $2
@@ -1597,7 +1597,7 @@ app.get('/api/reports/stock-balance', authenticateToken, async (req, res) => {
       FROM stock_items si
       LEFT JOIN item_subcategories isc ON si.subcategory_id = isc.id
       LEFT JOIN item_categories ic ON isc.category_id = ic.id
-      LEFT JOIN stock_batches sb ON si.id = sb.item_id AND sb.quantity > 0
+      LEFT JOIN stock_batches sb ON si.id = sb.item_id
       WHERE si.is_active = true
       GROUP BY si.id, ic.name, isc.name, si.item_code, si.name, si.unit, si.min_stock_level
       ORDER BY ic.name, si.name
@@ -2103,7 +2103,7 @@ app.get('/api/stock/items', authenticateToken, async (req, res) => {
       FROM stock_items si
       LEFT JOIN item_subcategories isc ON si.subcategory_id = isc.id
       LEFT JOIN item_categories ic ON isc.category_id = ic.id
-      LEFT JOIN stock_batches sb ON si.id = sb.item_id AND sb.quantity > 0
+      LEFT JOIN stock_batches sb ON si.id = sb.item_id
       ${whereClause}
       GROUP BY si.id, isc.name, ic.name, ic.id 
       ORDER BY ic.name, isc.name, si.name
@@ -3230,6 +3230,141 @@ app.post('/api/billing/vouchers', authenticateToken, async (req, res) => {
     await client.query('ROLLBACK');
     console.error('VOUCHER CREATE ERROR:', err);
     res.status(500).json({ error: 'Failed to create voucher', details: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT: Update Voucher (Editing)
+app.put('/api/billing/vouchers/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const {
+    patient_id, physician_id, items, referrals,
+    total_amount, discount_amount, net_amount,
+    payment_method, notes, tca_date
+  } = req.body;
+
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // 1. Fetch existing voucher to verify and get voucher_number
+    const vRes = await client.query('SELECT voucher_number FROM vouchers WHERE id = $1', [id]);
+    if (vRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Voucher not found' });
+    }
+    const { voucher_number } = vRes.rows[0];
+
+    // 2. Revert previous stock deductions for this voucher
+    // Find all stock transactions related to this voucher
+    const transactionsRes = await client.query(`
+      SELECT * FROM stock_transactions 
+      WHERE reason = $1 OR reason LIKE '%(' || $2 || ')'
+    `, [`Voucher sale ${voucher_number}`, voucher_number]);
+
+    for (const st of transactionsRes.rows) {
+      if (st.batch_id) {
+        // Add quantity back to the batch (subtracting a negative quantity adds it back)
+        await client.query(`
+          UPDATE stock_batches 
+          SET quantity = quantity - $1, updated_by = $2 
+          WHERE id = $3
+        `, [st.quantity, req.user.id, st.batch_id]);
+      }
+    }
+
+    // Delete those stock transactions
+    await client.query(`
+      DELETE FROM stock_transactions 
+      WHERE reason = $1 OR reason LIKE '%(' || $2 || ')'
+    `, [`Voucher sale ${voucher_number}`, voucher_number]);
+
+    // Clean up empty OVERSOLD batches
+    await client.query(`
+      DELETE FROM stock_batches 
+      WHERE batch_number = 'OVERSOLD' AND quantity = 0
+    `);
+
+    // 3. Delete existing voucher items and referrals
+    await client.query('DELETE FROM voucher_items WHERE voucher_id = $1', [id]);
+    await client.query('DELETE FROM voucher_referrals WHERE voucher_id = $1', [id]);
+
+    // 4. Update core Voucher details
+    await client.query(`
+      UPDATE vouchers
+      SET patient_id = $1, physician_id = $2, total_amount = $3, discount_amount = $4,
+          net_amount = $5, payment_method = $6, notes = $7, tca_date = $8,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $9
+    `, [patient_id, physician_id || null, total_amount, discount_amount, net_amount, payment_method, notes, tca_date || null, id]);
+
+    // 5. Insert new items and deduct stock
+    for (const item of items) {
+      let labCostPrice = item.lab_cost_price || 0;
+      let labCommissionPct = item.lab_commission_pct || 0;
+      let labPaymentStatus = 'N/A';
+
+      if (item.item_type === 'INVESTIGATION') {
+        labPaymentStatus = 'Pending';
+        
+        if (labCostPrice === 0 || labCommissionPct === 0) {
+           if (item.laboratory_id) {
+              const specificRes = await client.query(
+                'SELECT purchase_price, commission_percentage FROM laboratory_test_pricing WHERE laboratory_id = $1 AND item_id = $2',
+                [item.laboratory_id, item.item_id]
+              );
+              
+              if (specificRes.rows.length > 0) {
+                if (labCostPrice === 0) labCostPrice = parseFloat(specificRes.rows[0].purchase_price);
+                if (labCommissionPct === 0) labCommissionPct = parseFloat(specificRes.rows[0].commission_percentage);
+              } else {
+                const itemRes = await client.query('SELECT default_purchase_price FROM stock_items WHERE id = $1', [item.item_id]);
+                const labRes = await client.query('SELECT commission_percentage FROM laboratories WHERE id = $1', [item.laboratory_id]);
+                
+                if (labCostPrice === 0 && itemRes.rows.length > 0) labCostPrice = parseFloat(itemRes.rows[0].default_purchase_price);
+                if (labCommissionPct === 0 && labRes.rows.length > 0) labCommissionPct = parseFloat(labRes.rows[0].commission_percentage);
+              }
+           } else {
+             const itemRes = await client.query('SELECT default_purchase_price FROM stock_items WHERE id = $1', [item.item_id]);
+             if (labCostPrice === 0 && itemRes.rows.length > 0) labCostPrice = parseFloat(itemRes.rows[0].default_purchase_price);
+           }
+        }
+      }
+
+      await client.query(`
+        INSERT INTO voucher_items (voucher_id, item_type, item_id, name, quantity, unit_price, subtotal, laboratory_id, lab_cost_price, lab_commission_pct, lab_payment_status, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `, [id, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id || null, labCostPrice, labCommissionPct, labPaymentStatus, req.user.id]);
+
+      if (item.item_type === 'PHARMACY') {
+        await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`, req.user.id);
+      } else if (item.item_type === 'PACKAGE') {
+        const pkgItems = await client.query('SELECT * FROM gp_package_items WHERE package_id = $1 AND is_active = true', [item.item_id]);
+        for (const pi of pkgItems.rows) {
+          const totalQty = pi.quantity * item.quantity;
+          await deductStock(client, pi.item_id, totalQty, `Voucher Package ${item.name} (${voucher_number})`, req.user.id);
+        }
+      }
+    }
+
+    // 6. Insert Referrals
+    if (referrals && Array.isArray(referrals)) {
+      for (const ref of referrals) {
+        await client.query(`
+          INSERT INTO voucher_referrals (voucher_id, referred_person_id, referral_type, percentage, amount, created_by)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [id, ref.referred_person_id, ref.referral_type, ref.percentage, ref.amount, req.user.id]);
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Voucher updated successfully', id, voucher_number });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('VOUCHER EDIT ERROR:', err);
+    res.status(500).json({ error: 'Failed to update voucher', details: err.message });
   } finally {
     client.release();
   }
