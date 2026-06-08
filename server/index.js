@@ -2729,7 +2729,7 @@ app.delete('/api/gp-packages/:id', authenticateToken, async (req, res) => {
 // --- Billing & Voucher Module Routes ---
 
 // Helper for stock deduction (FEFO)
-const deductStock = async (client, itemId, quantityToDeduct, reason, userId) => {
+const deductStock = async (client, itemId, quantityToDeduct, reason, userId, customDate = null) => {
   // 1. Check total stock
   const stockRes = await client.query('SELECT SUM(quantity) as total FROM stock_batches WHERE item_id = $1', [itemId]);
   const totalAvailable = parseInt(stockRes.rows[0].total) || 0;
@@ -2754,9 +2754,12 @@ const deductStock = async (client, itemId, quantityToDeduct, reason, userId) => 
     
     await client.query('UPDATE stock_batches SET quantity = quantity - $1, updated_by = $2 WHERE id = $3', [takeFromThisBatch, userId, batch.id]);
     
-    await client.query(
-      'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
-      [itemId, batch.id, 'OUT', -takeFromThisBatch, reason, userId]
+    await client.query(`
+      INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by${customDate ? ', transaction_date' : ''})
+      VALUES ($1, $2, $3, $4, $5, $6${customDate ? ', $7' : ''})
+    `, customDate
+       ? [itemId, batch.id, 'OUT', -takeFromThisBatch, reason, userId, customDate]
+       : [itemId, batch.id, 'OUT', -takeFromThisBatch, reason, userId]
     );
 
     remainingToDeduct -= takeFromThisBatch;
@@ -2773,9 +2776,12 @@ const deductStock = async (client, itemId, quantityToDeduct, reason, userId) => 
 
     const oversoldBatchId = overSRes.rows[0].id;
 
-    await client.query(
-      'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
-      [itemId, oversoldBatchId, 'OUT', -remainingToDeduct, reason, userId]
+    await client.query(`
+      INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by${customDate ? ', transaction_date' : ''})
+      VALUES ($1, $2, $3, $4, $5, $6${customDate ? ', $7' : ''})
+    `, customDate
+       ? [itemId, oversoldBatchId, 'OUT', -remainingToDeduct, reason, userId, customDate]
+       : [itemId, oversoldBatchId, 'OUT', -remainingToDeduct, reason, userId]
     );
   }
 };
@@ -3139,11 +3145,12 @@ app.post('/api/billing/vouchers', authenticateToken, async (req, res) => {
   const { 
     patient_id, physician_id, items, referrals, 
     total_amount, discount_amount, net_amount, 
-    payment_method, notes, tca_date 
+    payment_method, notes, tca_date, created_at
   } = req.body;
 
-  // Generate Voucher Number: VOU-YYMMDD-RAND
-  const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+  // Generate Voucher Number: VOU-YYMMDD-RAND (using selected created_at date if provided)
+  const dateObj = created_at ? new Date(created_at) : new Date();
+  const datePart = dateObj.toISOString().slice(2, 10).replace(/-/g, '');
   const randPart = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
   const voucher_number = `VOU-${datePart}-${randPart}`;
 
@@ -3153,11 +3160,16 @@ app.post('/api/billing/vouchers', authenticateToken, async (req, res) => {
     await client.query('BEGIN');
 
     // 1. Insert Voucher
-    const vRes = await client.query(`
-      INSERT INTO vouchers (voucher_number, patient_id, physician_id, total_amount, discount_amount, net_amount, payment_method, notes, tca_date, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    let insertQuery = `
+      INSERT INTO vouchers (voucher_number, patient_id, physician_id, total_amount, discount_amount, net_amount, payment_method, notes, tca_date, created_by${created_at ? ', created_at' : ''})
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10${created_at ? ', $11' : ''})
       RETURNING id
-    `, [voucher_number, patient_id, physician_id || null, total_amount, discount_amount, net_amount, payment_method, notes, tca_date || null, req.user.id]);
+    `;
+    const queryParams = [voucher_number, patient_id, physician_id || null, total_amount, discount_amount, net_amount, payment_method, notes, tca_date || null, req.user.id];
+    if (created_at) {
+      queryParams.push(created_at);
+    }
+    const vRes = await client.query(insertQuery, queryParams);
     const voucherId = vRes.rows[0].id;
 
     // 2. Insert Items & Deduct Stock
@@ -3203,13 +3215,13 @@ app.post('/api/billing/vouchers', authenticateToken, async (req, res) => {
       `, [voucherId, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id || null, labCostPrice, labCommissionPct, labPaymentStatus, req.user.id]);
 
       if (item.item_type === 'PHARMACY') {
-        await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`, req.user.id);
+        await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`, req.user.id, created_at);
       } else if (item.item_type === 'PACKAGE') {
         // Find package components
         const pkgItems = await client.query('SELECT * FROM gp_package_items WHERE package_id = $1 AND is_active = true', [item.item_id]);
         for (const pi of pkgItems.rows) {
           const totalQty = pi.quantity * item.quantity;
-          await deductStock(client, pi.item_id, totalQty, `Voucher Package ${item.name} (${voucher_number})`, req.user.id);
+          await deductStock(client, pi.item_id, totalQty, `Voucher Package ${item.name} (${voucher_number})`, req.user.id, created_at);
         }
       }
     }
@@ -3241,7 +3253,7 @@ app.put('/api/billing/vouchers/:id', authenticateToken, async (req, res) => {
   const {
     patient_id, physician_id, items, referrals,
     total_amount, discount_amount, net_amount,
-    payment_method, notes, tca_date
+    payment_method, notes, tca_date, created_at
   } = req.body;
 
   const client = await db.pool.connect();
@@ -3249,13 +3261,14 @@ app.put('/api/billing/vouchers/:id', authenticateToken, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // 1. Fetch existing voucher to verify and get voucher_number
-    const vRes = await client.query('SELECT voucher_number FROM vouchers WHERE id = $1', [id]);
+    // 1. Fetch existing voucher to verify and get voucher_number and creation date
+    const vRes = await client.query('SELECT voucher_number, created_at FROM vouchers WHERE id = $1', [id]);
     if (vRes.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Voucher not found' });
     }
-    const { voucher_number } = vRes.rows[0];
+    const { voucher_number, created_at: existing_created_at } = vRes.rows[0];
+    const finalVoucherDate = created_at || existing_created_at;
 
     // 2. Revert previous stock deductions for this voucher
     // Find all stock transactions related to this voucher
@@ -3296,9 +3309,10 @@ app.put('/api/billing/vouchers/:id', authenticateToken, async (req, res) => {
       UPDATE vouchers
       SET patient_id = $1, physician_id = $2, total_amount = $3, discount_amount = $4,
           net_amount = $5, payment_method = $6, notes = $7, tca_date = $8,
+          created_at = COALESCE($9, created_at),
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $9
-    `, [patient_id, physician_id || null, total_amount, discount_amount, net_amount, payment_method, notes, tca_date || null, id]);
+      WHERE id = $10
+    `, [patient_id, physician_id || null, total_amount, discount_amount, net_amount, payment_method, notes, tca_date || null, created_at || null, id]);
 
     // 5. Insert new items and deduct stock
     for (const item of items) {
@@ -3339,12 +3353,12 @@ app.put('/api/billing/vouchers/:id', authenticateToken, async (req, res) => {
       `, [id, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id || null, labCostPrice, labCommissionPct, labPaymentStatus, req.user.id]);
 
       if (item.item_type === 'PHARMACY') {
-        await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`, req.user.id);
+        await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`, req.user.id, finalVoucherDate);
       } else if (item.item_type === 'PACKAGE') {
         const pkgItems = await client.query('SELECT * FROM gp_package_items WHERE package_id = $1 AND is_active = true', [item.item_id]);
         for (const pi of pkgItems.rows) {
           const totalQty = pi.quantity * item.quantity;
-          await deductStock(client, pi.item_id, totalQty, `Voucher Package ${item.name} (${voucher_number})`, req.user.id);
+          await deductStock(client, pi.item_id, totalQty, `Voucher Package ${item.name} (${voucher_number})`, req.user.id, finalVoucherDate);
         }
       }
     }
@@ -3361,16 +3375,79 @@ app.put('/api/billing/vouchers/:id', authenticateToken, async (req, res) => {
 
     await client.query('COMMIT');
     res.json({ message: 'Voucher updated successfully', id, voucher_number });
-  } catch (err) {
+    } catch (err) {
     await client.query('ROLLBACK');
     console.error('VOUCHER EDIT ERROR:', err);
     res.status(500).json({ error: 'Failed to update voucher', details: err.message });
-  } finally {
+    } finally {
     client.release();
-  }
-});
+    }
+    });
 
-// GET: All referrals (with filters)
+    // DELETE: Delete/Void Voucher
+    app.delete('/api/billing/vouchers/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const client = await db.pool.connect();
+
+    try {
+    await client.query('BEGIN');
+
+    // 1. Fetch existing voucher to verify and get voucher_number
+    const vRes = await client.query('SELECT voucher_number FROM vouchers WHERE id = $1', [id]);
+    if (vRes.rows.length === 0) {
+     await client.query('ROLLBACK');
+     return res.status(404).json({ error: 'Voucher not found' });
+    }
+    const { voucher_number } = vRes.rows[0];
+
+    // 2. Revert stock deductions for this voucher
+    const transactionsRes = await client.query(`
+     SELECT * FROM stock_transactions 
+     WHERE reason = $1 OR reason LIKE '%(' || $2 || ')'
+    `, [`Voucher sale ${voucher_number}`, voucher_number]);
+
+    for (const st of transactionsRes.rows) {
+     if (st.batch_id) {
+       // Add quantity back to the batch (subtracting negative quantity adds it back)
+       await client.query(`
+         UPDATE stock_batches 
+         SET quantity = quantity - $1, updated_by = $2 
+         WHERE id = $3
+       `, [st.quantity, req.user.id, st.batch_id]);
+     }
+    }
+
+    // Delete those stock transactions
+    await client.query(`
+     DELETE FROM stock_transactions 
+     WHERE reason = $1 OR reason LIKE '%(' || $2 || ')'
+    `, [`Voucher sale ${voucher_number}`, voucher_number]);
+
+    // Clean up empty OVERSOLD batches
+    await client.query(`
+     DELETE FROM stock_batches 
+     WHERE batch_number = 'OVERSOLD' AND quantity = 0
+    `);
+
+    // 3. Delete voucher items and referrals
+    await client.query('DELETE FROM voucher_items WHERE voucher_id = $1', [id]);
+    await client.query('DELETE FROM voucher_referrals WHERE voucher_id = $1', [id]);
+
+    // 4. Delete the main Voucher record
+    await client.query('DELETE FROM vouchers WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+    res.json({ message: 'Voucher deleted and stock restored successfully', id });
+    } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('VOUCHER DELETE ERROR:', err);
+    res.status(500).json({ error: 'Failed to delete voucher', details: err.message });
+    } finally {
+    client.release();
+    }
+    });
+
+    // GET: All referrals (with filters)
 app.get('/api/billing/referrals', authenticateToken, async (req, res) => {
   const { referred_person_id, from_date, to_date, payment_status } = req.query;
   
@@ -3596,6 +3673,62 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
     await client.query('ROLLBACK');
     console.error('PURCHASE UPDATE ERROR:', err);
     res.status(500).json({ error: 'Failed to update purchase invoice', details: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE: Delete/Void Purchase Invoice
+app.delete('/api/purchases/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // 1. Fetch existing purchase and verify its invoice number
+    const pRes = await client.query('SELECT * FROM purchases WHERE id = $1', [id]);
+    if (pRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Purchase not found' });
+    }
+    const oldPurchase = pRes.rows[0];
+    const invoice_number = oldPurchase.invoice_number;
+
+    // 2. Safety Check: Verify if any items from this purchase have been sold/used
+    const transactionsRes = await client.query(`
+      SELECT st.*, sb.quantity as current_batch_qty
+      FROM stock_transactions st
+      JOIN stock_batches sb ON st.batch_id = sb.id
+      WHERE st.reason = $1 AND st.type = 'IN'
+    `, [`Purchase Invoice ${invoice_number}`]);
+
+    for (const st of transactionsRes.rows) {
+      if (st.current_batch_qty < st.quantity) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ 
+          error: `Cannot delete: Some items from batch ${st.batch_id} (Item Code/ID ${st.item_id}) have already been used or sold.` 
+        });
+      }
+    }
+
+    // 3. Revert: Delete old batches, transactions, and items
+    const batchIds = transactionsRes.rows.map(t => t.batch_id);
+    if (batchIds.length > 0) {
+      await client.query('DELETE FROM stock_transactions WHERE batch_id = ANY($1)', [batchIds]);
+      await client.query('DELETE FROM stock_batches WHERE id = ANY($1)', [batchIds]);
+    }
+    await client.query('DELETE FROM purchase_items WHERE purchase_id = $1', [id]);
+
+    // 4. Delete the purchase record itself
+    await client.query('DELETE FROM purchases WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+    res.json({ message: 'Purchase deleted and stock removed successfully', id });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE PURCHASE ERROR:', err);
+    res.status(500).json({ error: 'Failed to delete purchase', details: err.message });
   } finally {
     client.release();
   }

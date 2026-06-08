@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, FileText, Calendar, User, DollarSign, Eye, Printer, Filter, X, RotateCcw, Hash, Stethoscope, Edit3 } from 'lucide-react';
+import { Plus, Search, FileText, Calendar, User, DollarSign, Eye, Printer, Filter, X, RotateCcw, Hash, Stethoscope, Edit3, Trash2, MoreVertical } from 'lucide-react';
 import VoucherEntry from './VoucherEntry';
 import apiRequest from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
 
 import { API_BASE } from '../../config';
 
 export default function BillingPage() {
+  const { user, hasPermission } = useAuth();
   const [view, setView] = useState('list'); // 'list' or 'create'
   const [editVoucherId, setEditVoucherId] = useState(null);
   const [vouchers, setVouchers] = useState([]);
+  const [activeDropdownId, setActiveDropdownId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [printSettings, setPrintSettings] = useState(null);
   
@@ -197,6 +200,26 @@ export default function BillingPage() {
     setView('create');
   };
 
+  const handleDelete = async (id) => {
+    if (window.confirm('Are you absolutely sure you want to delete/void this voucher? This will permanently delete the billing record and completely restore all deducted stock balances.')) {
+      try {
+        const res = await apiRequest(`/billing/vouchers/${id}`, {
+          method: 'DELETE'
+        });
+        if (res && res.ok) {
+          alert('Voucher successfully deleted and stock levels restored!');
+          await fetchVouchers();
+        } else {
+          const err = await res.json();
+          alert(err.error || 'Failed to delete voucher');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Server error while deleting voucher');
+      }
+    }
+  };
+
   const closeViewModal = () => {
     setIsViewModalOpen(false);
     setSelectedVoucher(null);
@@ -375,32 +398,94 @@ export default function BillingPage() {
                       <td>
                         <span className="status-badge status-completed">{v.payment_status}</span>
                       </td>
-                      <td style={{ textAlign: 'right' }}>
-                         <div className="flex justify-end gap-3">
+                      <td style={{ textAlign: 'right', position: 'relative' }}>
+                         <div className="action-dropdown-container" style={{ position: 'relative', display: 'inline-block' }}>
                            <button 
-                             className="action-btn view-btn" 
-                             title="View Details" 
-                             onClick={() => handleView(v.id)}
+                             className="action-btn"
+                             onClick={() => setActiveDropdownId(activeDropdownId === v.id ? null : v.id)}
+                             style={{
+                               padding: '0.35rem 0.6rem',
+                               borderRadius: '0.375rem',
+                               backgroundColor: '#f1f5f9',
+                               border: '1px solid #cbd5e1',
+                               cursor: 'pointer',
+                               color: '#475569',
+                               display: 'inline-flex',
+                               alignItems: 'center',
+                               justifyContent: 'center',
+                               transition: 'all 0.15s'
+                             }}
                            >
-                             <Eye size={16} />
-                             <span>View</span>
+                             <MoreVertical size={16} />
                            </button>
-                           <button 
-                             className="action-btn edit-btn" 
-                             title="Edit Voucher" 
-                             onClick={() => handleEdit(v.id)}
-                           >
-                             <Edit3 size={16} />
-                             <span>Edit</span>
-                           </button>
-                           <button 
-                             className="action-btn print-btn" 
-                             title="Print Voucher" 
-                             onClick={() => handlePrint(v.id)}
-                           >
-                             <Printer size={16} />
-                             <span>Print</span>
-                           </button>
+
+                           {activeDropdownId === v.id && (
+                             <div 
+                               style={{
+                                 position: 'absolute',
+                                 right: 0,
+                                 top: '110%',
+                                 backgroundColor: 'white',
+                                 borderRadius: '0.5rem',
+                                 border: '1px solid #e2e8f0',
+                                 boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                                 zIndex: 100,
+                                 minWidth: '140px',
+                                 padding: '0.25rem',
+                                 display: 'flex',
+                                 flexDirection: 'column',
+                                 gap: '0.125rem',
+                                 textAlign: 'left'
+                               }}
+                             >
+                               <button 
+                                 className="dropdown-item" 
+                                 onClick={() => { handleView(v.id); setActiveDropdownId(null); }}
+                                 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b', borderRadius: '0.375rem', width: '100%', textAlign: 'left' }}
+                                 onMouseOver={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                 onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                               >
+                                 <Eye size={14} color="#3b82f6" /> View Details
+                               </button>
+
+                               {hasPermission('edit_voucher') && (
+                                 <button 
+                                   className="dropdown-item" 
+                                   onClick={() => { handleEdit(v.id); setActiveDropdownId(null); }}
+                                   style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b', borderRadius: '0.375rem', width: '100%', textAlign: 'left' }}
+                                   onMouseOver={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                   onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                 >
+                                   <Edit3 size={14} color="#d97706" /> Edit Voucher
+                                 </button>
+                               )}
+
+                               <button 
+                                 className="dropdown-item" 
+                                 onClick={() => { handlePrint(v.id); setActiveDropdownId(null); }}
+                                 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b', borderRadius: '0.375rem', width: '100%', textAlign: 'left' }}
+                                 onMouseOver={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                 onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                               >
+                                 <Printer size={14} color="#64748b" /> Print Invoice
+                               </button>
+
+                               {hasPermission('delete_voucher') && (
+                                 <>
+                                   <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '0.25rem 0' }}></div>
+                                   <button 
+                                     className="dropdown-item" 
+                                     onClick={() => { handleDelete(v.id); setActiveDropdownId(null); }}
+                                     style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', border: 'none', background: '#fef2f2', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600, color: '#ef4444', borderRadius: '0.375rem', width: '100%', textAlign: 'left' }}
+                                     onMouseOver={e => e.currentTarget.style.backgroundColor = '#fee2e2'}
+                                     onMouseOut={e => e.currentTarget.style.backgroundColor = '#fef2f2'}
+                                   >
+                                     <Trash2 size={14} color="#ef4444" /> Delete/Void
+                                   </button>
+                                 </>
+                               )}
+                             </div>
+                           )}
                          </div>
                       </td>
                     </tr>

@@ -33,6 +33,12 @@ const AVAILABLE_PERMISSIONS = [
   // System Administration
   { id: 'manage_users', label: 'Admin: Manage Users & Roles' },
 
+  // Edit & Delete Permissions
+  { id: 'edit_voucher', label: 'Billing: Edit Voucher' },
+  { id: 'delete_voucher', label: 'Billing: Delete/Void Voucher' },
+  { id: 'edit_purchase', label: 'Purchases: Edit Purchase' },
+  { id: 'delete_purchase', label: 'Purchases: Delete/Void Purchase' },
+
   // Master Data
   { id: 'access_master_patients', label: 'Master Data: Access Patients' },
   { id: 'access_master_physicians', label: 'Master Data: Access Physicians' },
@@ -184,8 +190,12 @@ export default function RoleManagement() {
                   <td><strong>{role.name}</strong> {role.id === 1 && <span className="status-badge" style={{ backgroundColor: '#dcfce7', color: '#166534', marginLeft: '0.5rem' }}>System Default</span>}</td>
                   <td>{role.description || '-'}</td>
                   <td>
-                    <span className="status-badge" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>
-                      {role.permissions ? role.permissions.length : 0} assigned
+                    <span className="status-badge" style={{ 
+                      backgroundColor: role.id === 1 || role.name === 'Admin' ? '#dcfce7' : '#f1f5f9', 
+                      color: role.id === 1 || role.name === 'Admin' ? '#166534' : '#475569',
+                      fontWeight: role.id === 1 || role.name === 'Admin' ? 700 : 'normal'
+                    }}>
+                      {role.id === 1 || role.name === 'Admin' ? 'All Assigned' : `${role.permissions ? role.permissions.length : 0} assigned`}
                     </span>
                   </td>
                   <td>

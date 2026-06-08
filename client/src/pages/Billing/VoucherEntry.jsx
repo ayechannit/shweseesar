@@ -28,6 +28,7 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [notes, setNotes] = useState('');
   const [tcaDate, setTcaDate] = useState('');
+  const [voucherDate, setVoucherDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
 
   // --- Add Patient Modal State ---
@@ -62,6 +63,15 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
     }
   }, [editVoucherId]);
 
+  const formatDateLocal = (dateStr) => {
+    if (!dateStr) return '';
+    const dateObj = new Date(dateStr);
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const fetchVoucherToEdit = async () => {
     setLoading(true);
     try {
@@ -91,6 +101,7 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
         setPaymentMethod(v.payment_method || 'Cash');
         setNotes(v.notes || '');
         setTcaDate(v.tca_date ? v.tca_date.substring(0, 10) : '');
+        setVoucherDate(v.created_at ? formatDateLocal(v.created_at) : new Date().toISOString().split('T')[0]);
       }
     } catch (err) {
       console.error('Failed to load voucher for edit:', err);
@@ -249,6 +260,13 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
     setReferrals(newRefs);
   };
 
+  const handleKeyDown = (e) => {
+    // Prevent Enter key from submitting the form when inside an input field
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+      e.preventDefault();
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedPatient) return alert('Please select a patient');
@@ -277,7 +295,8 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
           net_amount: netTotal,
           payment_method: paymentMethod,
           notes,
-          tca_date: tcaDate
+          tca_date: tcaDate,
+          created_at: voucherDate
         })
       });
 
@@ -320,7 +339,7 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
 
   return (
     <div className="voucher-entry" style={{ animation: 'slideIn 0.3s ease-out' }}>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
         <div className="flex items-center gap-3">
@@ -651,6 +670,23 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
             </div>
 
             <div className="grid grid-cols-1 gap-4 mb-6">
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 700, fontSize: '0.875rem' }}>
+                  Voucher Date {editVoucherId && <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>(Locked)</span>}
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input 
+                    type="date" 
+                    className="form-control" 
+                    style={{ height: '42px', borderRadius: '8px', paddingLeft: '36px', backgroundColor: editVoucherId ? '#f1f5f9' : 'white', cursor: editVoucherId ? 'not-allowed' : 'default' }}
+                    value={voucherDate}
+                    onChange={(e) => setVoucherDate(e.target.value)}
+                    disabled={!!editVoucherId}
+                  />
+                  <Calendar size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                </div>
+              </div>
+
               <div className="form-group">
                 <label className="form-label" style={{ fontWeight: 700, fontSize: '0.875rem' }}>
                   TCA Date (To Come Again)

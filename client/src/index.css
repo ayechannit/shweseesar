@@ -555,6 +555,20 @@ tr:last-child td {
   box-shadow: 0 4px 6px -1px rgba(217, 119, 6, 0.2);
 }
 
+.delete-btn {
+  background-color: #fee2e2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.delete-btn:hover {
+  background-color: #dc2626;
+  color: white;
+  border-color: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.2);
+}
+
 .action-btn svg {
   flex-shrink: 0;
 }

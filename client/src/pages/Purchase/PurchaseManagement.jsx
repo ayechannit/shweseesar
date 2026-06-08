@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, Plus, Eye, X, AlertTriangle, ShoppingBag, Search, Edit } from 'lucide-react';
+import { Truck, Plus, Eye, X, AlertTriangle, ShoppingBag, Search, Edit, Trash2, MoreVertical } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 import apiRequest from '../../utils/api';
 
 export default function PurchaseManagement() {
+  const { user } = useAuth();
   const [purchases, setPurchases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [activeDropdownId, setActiveDropdownId] = useState(null);
 
   // Filter State
   const [fromDate, setFromDate] = useState('');
@@ -33,6 +36,16 @@ export default function PurchaseManagement() {
 
   // Master Data
   const [suppliers, setSuppliers] = useState([]);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (!e.target.closest('.action-dropdown-container')) {
+        setActiveDropdownId(null);
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, []);
   const [stockItems, setStockItems] = useState([]);
 
   // Form State
@@ -174,6 +187,26 @@ export default function PurchaseManagement() {
     } catch (err) {
       console.error(err);
       alert("Failed to fetch purchase details for editing");
+    }
+  };
+
+  const deletePurchase = async (id) => {
+    if (window.confirm('Are you absolutely sure you want to delete/void this purchase? This will permanently delete the purchase invoice and completely remove the added stock levels from your inventory. This action is irreversible!')) {
+      try {
+        const res = await apiRequest(`/purchases/${id}`, {
+          method: 'DELETE'
+        });
+        if (res && res.ok) {
+          alert('Purchase invoice successfully deleted and stock levels removed!');
+          fetchPurchases();
+        } else {
+          const err = await res.json();
+          alert(err.error || 'Failed to delete purchase. Some items from this invoice might already have been sold.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Server error while deleting purchase');
+      }
     }
   };
 
@@ -482,15 +515,85 @@ export default function PurchaseManagement() {
                         {parseFloat(p.balance_amount).toLocaleString()}
                       </td>
                       <td><span className="status-badge" style={{ background: '#f1f5f9', color: '#475569' }}>{p.payment_method}</span></td>
-                      <td>
-                        <div className="actions" style={{ justifyContent: 'center' }}>
-                          <button className="btn btn-outline" onClick={() => viewPurchase(p.id)} style={{ padding: '0.25rem 0.5rem', color: '#2563eb' }}>
-                            <Eye size={14} /> View
-                          </button>
-                          <button className="btn btn-outline" onClick={() => editPurchase(p.id)} style={{ padding: '0.25rem 0.5rem', color: '#059669' }}>
-                            <Edit size={14} /> Edit
-                          </button>
-                        </div>
+                      <td style={{ textAlign: 'center', position: 'relative' }}>
+                         <div className="action-dropdown-container" style={{ position: 'relative', display: 'inline-block' }}>
+                           <button 
+                             className="action-btn"
+                             onClick={() => setActiveDropdownId(activeDropdownId === p.id ? null : p.id)}
+                             style={{
+                               padding: '0.35rem 0.6rem',
+                               borderRadius: '0.375rem',
+                               backgroundColor: '#f1f5f9',
+                               border: '1px solid #cbd5e1',
+                               cursor: 'pointer',
+                               color: '#475569',
+                               display: 'inline-flex',
+                               alignItems: 'center',
+                               justifyContent: 'center',
+                               transition: 'all 0.15s'
+                             }}
+                           >
+                             <MoreVertical size={16} />
+                           </button>
+
+                           {activeDropdownId === p.id && (
+                             <div 
+                               style={{
+                                 position: 'absolute',
+                                 right: 0,
+                                 top: '110%',
+                                 backgroundColor: 'white',
+                                 borderRadius: '0.5rem',
+                                 border: '1px solid #e2e8f0',
+                                 boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                                 zIndex: 100,
+                                 minWidth: '140px',
+                                 padding: '0.25rem',
+                                 display: 'flex',
+                                 flexDirection: 'column',
+                                 gap: '0.125rem',
+                                 textAlign: 'left'
+                               }}
+                             >
+                               <button 
+                                 className="dropdown-item" 
+                                 onClick={() => { viewPurchase(p.id); setActiveDropdownId(null); }}
+                                 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b', borderRadius: '0.375rem', width: '100%', textAlign: 'left' }}
+                                 onMouseOver={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                 onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                               >
+                                 <Eye size={14} color="#2563eb" /> View Invoice
+                               </button>
+
+                               {user?.role === 'Admin' && (
+                                 <button 
+                                   className="dropdown-item" 
+                                   onClick={() => { editPurchase(p.id); setActiveDropdownId(null); }}
+                                   style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b', borderRadius: '0.375rem', width: '100%', textAlign: 'left' }}
+                                   onMouseOver={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                   onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                 >
+                                   <Edit size={14} color="#059669" /> Edit Invoice
+                                 </button>
+                               )}
+
+                               {user?.role === 'Admin' && (
+                                 <>
+                                   <div style={{ height: '1px', backgroundColor: '#f1f5f9', margin: '0.25rem 0' }}></div>
+                                   <button 
+                                     className="dropdown-item" 
+                                     onClick={() => { deletePurchase(p.id); setActiveDropdownId(null); }}
+                                     style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', border: 'none', background: '#fef2f2', cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 600, color: '#ef4444', borderRadius: '0.375rem', width: '100%', textAlign: 'left' }}
+                                     onMouseOver={e => e.currentTarget.style.backgroundColor = '#fee2e2'}
+                                     onMouseOut={e => e.currentTarget.style.backgroundColor = '#fef2f2'}
+                                   >
+                                     <Trash2 size={14} color="#ef4444" /> Delete/Void
+                                   </button>
+                                 </>
+                               )}
+                             </div>
+                           )}
+                         </div>
                       </td>
                     </tr>
                   ))
