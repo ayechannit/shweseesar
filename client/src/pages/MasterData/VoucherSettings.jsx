@@ -4,12 +4,40 @@ import { Save, Image as ImageIcon, CheckCircle } from 'lucide-react';
 import apiRequest from '../../utils/api';
 import { API_BASE } from '../../config';
 
+// Helper to convert database margin values (like '10px', '5mm', '0.5in') to numerical inches
+const parseToInches = (value) => {
+  if (!value) return '0.25'; // Default to 0.25 inches if empty
+  
+  const numeric = parseFloat(value);
+  if (isNaN(numeric)) return '0.25';
+  
+  if (value.toLowerCase().endsWith('px')) {
+    return (numeric / 96).toFixed(2); // 1 inch = 96px
+  }
+  if (value.toLowerCase().endsWith('mm')) {
+    return (numeric / 25.4).toFixed(2); // 1 inch = 25.4mm
+  }
+  if (value.toLowerCase().endsWith('in')) {
+    return numeric.toString();
+  }
+  
+  // If no known unit, assume it's already in inches
+  return numeric.toString();
+};
+
+// Helper to format numerical inches to CSS string for saving
+const formatToInchesCSS = (value) => {
+  const numeric = parseFloat(value);
+  if (isNaN(numeric)) return '0.25in';
+  return `${numeric}in`;
+};
+
 export default function VoucherSettings() {
   const [formData, setFormData] = useState({
-    marginTop: '10px',
-    marginRight: '10px',
-    marginBottom: '10px',
-    marginLeft: '10px',
+    marginTop: '0.25',
+    marginRight: '0.25',
+    marginBottom: '0.25',
+    marginLeft: '0.25',
     width: '100%',
     height: 'auto',
     address: 'Shwe See Sar Clinic, Yangon',
@@ -32,10 +60,10 @@ export default function VoucherSettings() {
       if (res.ok) {
         const data = await res.json();
         setFormData({
-          marginTop: data.margin_top || '10px',
-          marginRight: data.margin_right || '10px',
-          marginBottom: data.margin_bottom || '10px',
-          marginLeft: data.margin_left || '10px',
+          marginTop: parseToInches(data.margin_top || '10px'),
+          marginRight: parseToInches(data.margin_right || '10px'),
+          marginBottom: parseToInches(data.margin_bottom || '10px'),
+          marginLeft: parseToInches(data.margin_left || '10px'),
           width: data.width || '100%',
           height: data.height || 'auto',
           address: data.address || '',
@@ -80,10 +108,10 @@ export default function VoucherSettings() {
     setSuccessMsg('');
 
     const submitData = new FormData();
-    submitData.append('margin_top', formData.marginTop);
-    submitData.append('margin_right', formData.marginRight);
-    submitData.append('margin_bottom', formData.marginBottom);
-    submitData.append('margin_left', formData.marginLeft);
+    submitData.append('margin_top', formatToInchesCSS(formData.marginTop));
+    submitData.append('margin_right', formatToInchesCSS(formData.marginRight));
+    submitData.append('margin_bottom', formatToInchesCSS(formData.marginBottom));
+    submitData.append('margin_left', formatToInchesCSS(formData.marginLeft));
     submitData.append('width', formData.width);
     submitData.append('height', formData.height);
     submitData.append('address', formData.address);
@@ -212,50 +240,59 @@ export default function VoucherSettings() {
             </div>
 
             <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
-              <h3 style={{ fontWeight: 600, color: '#0f172a', marginBottom: '1rem', fontSize: '1.125rem' }}>Print Margins</h3>
+              <h3 style={{ fontWeight: 600, color: '#0f172a', marginBottom: '0.25rem', fontSize: '1.125rem' }}>Print Margins (Inches)</h3>
+              <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '1rem' }}>Enter print margins in inches (e.g., 0.5 or 1.0). The system will automatically convert and apply these to your print layout.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontSize: '0.875rem' }}>Top Margin</label>
+                  <label className="form-label" style={{ fontSize: '0.875rem' }}>Top Margin (in)</label>
                   <input 
-                    type="text" 
+                    type="number" 
+                    step="0.01"
+                    min="0"
                     name="marginTop" 
                     value={formData.marginTop} 
                     onChange={handleInputChange} 
                     className="form-control" 
-                    placeholder="e.g., 10px" 
+                    placeholder="e.g., 0.5" 
                   />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontSize: '0.875rem' }}>Right Margin</label>
+                  <label className="form-label" style={{ fontSize: '0.875rem' }}>Right Margin (in)</label>
                   <input 
-                    type="text" 
+                    type="number" 
+                    step="0.01"
+                    min="0"
                     name="marginRight" 
                     value={formData.marginRight} 
                     onChange={handleInputChange} 
                     className="form-control" 
-                    placeholder="e.g., 10px" 
+                    placeholder="e.g., 0.5" 
                   />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontSize: '0.875rem' }}>Bottom Margin</label>
+                  <label className="form-label" style={{ fontSize: '0.875rem' }}>Bottom Margin (in)</label>
                   <input 
-                    type="text" 
+                    type="number" 
+                    step="0.01"
+                    min="0"
                     name="marginBottom" 
                     value={formData.marginBottom} 
                     onChange={handleInputChange} 
                     className="form-control" 
-                    placeholder="e.g., 10px" 
+                    placeholder="e.g., 0.5" 
                   />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label" style={{ fontSize: '0.875rem' }}>Left Margin</label>
+                  <label className="form-label" style={{ fontSize: '0.875rem' }}>Left Margin (in)</label>
                   <input 
-                    type="text" 
+                    type="number" 
+                    step="0.01"
+                    min="0"
                     name="marginLeft" 
                     value={formData.marginLeft} 
                     onChange={handleInputChange} 
                     className="form-control" 
-                    placeholder="e.g., 10px" 
+                    placeholder="e.g., 0.5" 
                   />
                 </div>
               </div>
