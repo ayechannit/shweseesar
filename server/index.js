@@ -2384,7 +2384,7 @@ app.post('/api/stock/adjust', authenticateToken, async (req, res) => {
 
 // GET: All items with pricing info
 app.get('/api/pricing/items', authenticateToken, async (req, res) => {
-  const { category_id, subcategory_id } = req.query;
+  const { category_id, subcategory_id, search } = req.query;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
@@ -2401,6 +2401,12 @@ app.get('/api/pricing/items', authenticateToken, async (req, res) => {
     } else if (category_id) {
       whereClause += ` AND ic.id = $${paramIndex}`;
       params.push(category_id);
+      paramIndex++;
+    }
+
+    if (search) {
+      whereClause += ` AND (si.name ILIKE $${paramIndex} OR si.item_code ILIKE $${paramIndex})`;
+      params.push(`%${search}%`);
       paramIndex++;
     }
     

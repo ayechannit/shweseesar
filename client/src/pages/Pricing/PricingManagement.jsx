@@ -42,6 +42,7 @@ export default function PricingManagement() {
     try {
       let url = `/pricing/items?page=${page}&limit=${limit}`;
       if (selectedCategory) url += `&category_id=${selectedCategory}`;
+      if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
       
       const res = await apiRequest(url);
       const result = await res.json();
@@ -75,12 +76,12 @@ export default function PricingManagement() {
   }, []);
 
   useEffect(() => {
-    setPage(1); // Reset to first page when category changes
-  }, [selectedCategory]);
+    setPage(1); // Reset to first page when category or search query changes
+  }, [selectedCategory, searchQuery]);
 
   useEffect(() => {
     fetchData();
-  }, [selectedCategory, page]);
+  }, [selectedCategory, searchQuery, page]);
 
   const handleExport = async () => {
     try {
@@ -225,10 +226,7 @@ export default function PricingManagement() {
     setEditForm(updatedForm);
   };
 
-  const filteredItems = items.filter(item => 
-    item.item_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (item.item_code && item.item_code.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredItems = items;
 
   return (
     <div className="pricing-page">
