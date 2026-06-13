@@ -45,6 +45,7 @@ export default function BillingPage() {
   // Modal State
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
+  const [activeTab, setActiveTab] = useState('details'); // 'details' or 'preview'
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -111,6 +112,7 @@ export default function BillingPage() {
       if (res && res.ok) {
         const data = await res.json();
         setSelectedVoucher(data);
+        setActiveTab('details');
         setIsViewModalOpen(true);
       }
     } catch (err) {
@@ -125,9 +127,8 @@ export default function BillingPage() {
       if (res && res.ok) {
         const data = await res.json();
         setSelectedVoucher(data);
-        setIsViewModalOpen(true);
 
-        // Give React time to render the modal and the printable content
+        // Give React time to render the background/hidden printable content
         setTimeout(() => {
           const printContent = document.getElementById('printable-voucher');
           if (printContent) {
@@ -282,6 +283,7 @@ export default function BillingPage() {
   const closeViewModal = () => {
     setIsViewModalOpen(false);
     setSelectedVoucher(null);
+    setActiveTab('details');
   };
 
   const handleFilterChange = (e) => {
@@ -570,238 +572,224 @@ export default function BillingPage() {
             const isNarrow = isNarrowWidth(printSettings?.width);
             return (
               <div className="modal-overlay">
-                <div className="modal" style={{ maxWidth: '800px', width: '90%' }}>
-                  <div className="modal-header">
-                    <h2 className="modal-title">Voucher Details: {selectedVoucher.voucher_number}</h2>
+                <div className="modal" style={{ maxWidth: '900px', width: '95%', padding: 0, overflow: 'hidden', borderRadius: '12px' }}>
+                  <div className="modal-header" style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #e2e8f0', marginBottom: 0 }}>
+                    <h2 className="modal-title" style={{ fontSize: '1.25rem', fontWeight: 700 }}>Voucher Details: {selectedVoucher.voucher_number}</h2>
                     <button className="close-btn" onClick={closeViewModal}><X size={24} /></button>
                   </div>
                   
                   {/* Scrollable Container */}
-                  <div style={{ maxHeight: '75vh', overflowY: 'auto', padding: '1.5rem' }}>
+                  <div style={{ maxHeight: '70vh', overflowY: 'auto', padding: '1.5rem', backgroundColor: '#ffffff' }}>
                     
-                    {/* Printable Area Wrapper */}
-                    <div id="printable-voucher" style={{ 
-                      backgroundColor: 'white', 
-                      width: formatWithUnit(printSettings?.width) || '100%', 
-                      minHeight: formatWithUnit(printSettings?.height) || 'auto', 
-                      margin: '0 auto', 
-                      paddingTop: printSettings?.margin_top || '10px',
-                      paddingRight: printSettings?.margin_right || '10px',
-                      paddingBottom: printSettings?.margin_bottom || '10px',
-                      paddingLeft: printSettings?.margin_left || '10px',
-                      boxSizing: 'border-box'
-                    }}>
-                      
-                      {/* Invoice Header Block */}
-                      <div style={{ 
-                        marginBottom: '2rem', 
-                        borderBottom: '2px solid #e2e8f0', 
-                        paddingBottom: '1.5rem', 
-                        display: 'flex', 
-                        flexDirection: isNarrow ? 'column' : 'row',
-                        justifyContent: isNarrow ? 'center' : 'space-between', 
-                        alignItems: isNarrow ? 'center' : 'flex-start',
-                        gap: isNarrow ? '1rem' : '0',
-                        textAlign: isNarrow ? 'center' : 'left'
-                      }}>
+                    {/* Voucher Screen Details (Fits the Screen Perfectly) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                      {/* Grid of Summary Cards */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+                        
+                        {/* Patient Card */}
                         <div style={{ 
-                          display: 'flex', 
-                          flexDirection: isNarrow ? 'column' : 'row',
-                          alignItems: isNarrow ? 'center' : 'flex-start', 
-                          gap: '1rem' 
+                          backgroundColor: '#f8fafc', 
+                          border: '1px solid #e2e8f0', 
+                          borderRadius: '8px', 
+                          padding: '1.25rem',
                         }}>
-                          {printSettings?.icon_path && (
-                            <img src={`${API_BASE.replace('/api', '')}/uploads/${printSettings.icon_path}`} alt="Logo" style={{ width: '60px', height: '60px', objectFit: 'contain', filter: 'grayscale(100%)' }} />
-                          )}
-                          <div>
-                            {printSettings?.address ? (
-                              printSettings.address.includes('\n') ? (
-                                <>
-                                  <h1 style={{ fontSize: isNarrow ? '1.25rem' : '1.5rem', fontWeight: 800, color: '#000000', margin: '0 0 0.25rem 0', fontFamily: 'inherit' }}>{printSettings.address.split('\n')[0]}</h1>
-                                  <p style={{ margin: 0, color: '#000000', whiteSpace: 'pre-line', fontSize: isNarrow ? '0.75rem' : '0.875rem', lineHeight: '1.4' }}>
-                                    {printSettings.address.substring(printSettings.address.indexOf('\n') + 1)}
-                                  </p>
-                                </>
-                              ) : (
-                                <h1 style={{ fontSize: isNarrow ? '1.25rem' : '1.5rem', fontWeight: 800, color: '#000000', margin: '0 0 0.25rem 0', fontFamily: 'inherit' }}>{printSettings.address}</h1>
-                              )
-                            ) : null}
-                            <div style={{ marginTop: printSettings?.address ? '1rem' : '0' }}>
-                              <p style={{ margin: '0', color: '#000000', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Invoice Date</p>
-                              <p style={{ margin: '0', color: '#000000', fontSize: isNarrow ? '0.8125rem' : '0.925rem', fontWeight: 500 }}>{new Date(selectedVoucher.created_at).toLocaleDateString()} {new Date(selectedVoucher.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                            </div>
+                          <h3 style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#475569', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem', margin: '0 0 0.75rem 0', letterSpacing: '0.05em' }}>
+                            Patient Info
+                          </h3>
+                          <p style={{ margin: '0 0 0.25rem 0', fontWeight: 700, fontSize: '1.125rem', color: '#1e293b' }}>
+                            {selectedVoucher.patient_name}
+                          </p>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.35rem 0.75rem', fontSize: '0.875rem', color: '#334155', marginTop: '0.5rem' }}>
+                            <span style={{ fontWeight: 500, color: '#64748b' }}>Patient ID:</span>
+                            <span style={{ fontWeight: 600 }}>{selectedVoucher.patient_code}</span>
+                            
+                            <span style={{ fontWeight: 500, color: '#64748b' }}>Phone:</span>
+                            <span>{selectedVoucher.patient_phone || 'N/A'}</span>
                           </div>
                         </div>
-                        
-                        <div style={{ textAlign: isNarrow ? 'center' : 'right', width: isNarrow ? '100%' : 'auto' }}>
-                          <h2 style={{ fontSize: isNarrow ? '1.5rem' : '1.75rem', fontWeight: 900, margin: '0 0 0.125rem 0', color: '#000000', textTransform: 'uppercase', letterSpacing: '-0.025em' }}>INVOICE</h2>
-                          <p style={{ margin: '0 0 0.5rem 0', color: '#000000', fontSize: isNarrow ? '0.875rem' : '1rem', fontWeight: 600 }}># {selectedVoucher.voucher_number}</p>
-                          <span style={{ 
-                            display: 'inline-block', 
-                            padding: '0.25rem 0.75rem', 
-                            backgroundColor: '#ffffff', 
-                            border: '1px solid #000000', 
-                            borderRadius: '4px', 
-                            fontSize: '0.75rem', 
-                            fontWeight: 700, 
-                            textTransform: 'uppercase', 
-                            color: '#000000' 
-                          }}>
-                            {selectedVoucher.payment_status}
-                          </span>
-                        </div>
-                      </div>
 
-                      {/* Patient & Service Metadata */}
-                      <div style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: isNarrow ? '1fr' : '1fr 1fr', 
-                        gap: isNarrow ? '1.5rem' : '2rem', 
-                        marginBottom: '2.5rem',
-                        textAlign: isNarrow ? 'center' : 'left'
-                      }}>
-                        <div style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: isNarrow ? 'center' : 'flex-start'
+                        {/* Service Card */}
+                        <div style={{ 
+                          backgroundColor: '#f8fafc', 
+                          border: '1px solid #e2e8f0', 
+                          borderRadius: '8px', 
+                          padding: '1.25rem',
                         }}>
-                          <h3 style={{ width: '100%', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#000000', borderBottom: '1px solid #000000', paddingBottom: '0.5rem', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>Billed To</h3>
-                          <p style={{ margin: '0 0 0.25rem 0', fontWeight: 700, fontSize: isNarrow ? '1rem' : '1.125rem', color: '#000000' }}>{selectedVoucher.patient_name}</p>
-                          <p style={{ margin: '0 0 0.25rem 0', color: '#000000', fontSize: '0.875rem' }}>Patient ID: <span style={{ fontWeight: 500, color: '#000000' }}>{selectedVoucher.patient_code}</span></p>
-                          {selectedVoucher.patient_phone && (
-                            <p style={{ margin: 0, color: '#000000', fontSize: '0.875rem' }}>Phone: <span style={{ fontWeight: 500, color: '#000000' }}>{selectedVoucher.patient_phone}</span></p>
-                          )}
-                        </div>
-                        
-                        <div style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: isNarrow ? 'center' : 'flex-start'
-                        }}>
-                          <h3 style={{ width: '100%', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#000000', borderBottom: '1px solid #000000', paddingBottom: '0.5rem', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>Service Details</h3>
-                          <div style={{ 
-                            display: 'grid', 
-                            gridTemplateColumns: isNarrow ? '1fr' : '100px 1fr', 
-                            gap: isNarrow ? '0.2rem' : '0.35rem 0.5rem', 
-                            fontSize: '0.875rem',
-                            width: '100%'
-                          }}>
-                            {isNarrow ? (
+                          <h3 style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#475569', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem', margin: '0 0 0.75rem 0', letterSpacing: '0.05em' }}>
+                            Service & Metadata
+                          </h3>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.35rem 0.75rem', fontSize: '0.875rem', color: '#334155' }}>
+                            <span style={{ fontWeight: 500, color: '#64748b' }}>Physician:</span>
+                            <span style={{ fontWeight: 600 }}>{selectedVoucher.physician_name || 'N/A'}</span>
+                            
+                            <span style={{ fontWeight: 500, color: '#64748b' }}>Method:</span>
+                            <span style={{ fontWeight: 600 }}>{selectedVoucher.payment_method}</span>
+
+                            <span style={{ fontWeight: 500, color: '#64748b' }}>Status:</span>
+                            <div>
+                              <span style={{ 
+                                display: 'inline-block', 
+                                padding: '0.15rem 0.5rem', 
+                                backgroundColor: selectedVoucher.payment_status === 'COMPLETED' ? '#dcfce7' : '#fee2e2', 
+                                border: `1px solid ${selectedVoucher.payment_status === 'COMPLETED' ? '#22c55e' : '#ef4444'}`, 
+                                borderRadius: '4px', 
+                                fontSize: '0.75rem', 
+                                fontWeight: 700, 
+                                color: selectedVoucher.payment_status === 'COMPLETED' ? '#15803d' : '#b91c1c'
+                              }}>
+                                {selectedVoucher.payment_status}
+                              </span>
+                            </div>
+
+                            <span style={{ fontWeight: 500, color: '#64748b' }}>Invoice Date:</span>
+                            <span>{new Date(selectedVoucher.created_at).toLocaleDateString()} {new Date(selectedVoucher.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            
+                            {selectedVoucher.tca_date && (
                               <>
-                                <p style={{ margin: 0, color: '#000000' }}>Physician: <span style={{ fontWeight: 600, color: '#000000' }}>{selectedVoucher.physician_name || 'N/A'}</span></p>
-                                <p style={{ margin: 0, color: '#000000' }}>Method: <span style={{ fontWeight: 600, color: '#000000' }}>{selectedVoucher.payment_method}</span></p>
-                                {selectedVoucher.tca_date && (
-                                  <p style={{ margin: 0, color: '#000000' }}>TCA Date: <span style={{ fontWeight: 700, color: '#000000' }}>{new Date(selectedVoucher.tca_date).toLocaleDateString()}</span></p>
-                                )}
-                              </>
-                            ) : (
-                              <>
-                                <span style={{ color: '#000000' }}>Physician:</span>
-                                <span style={{ fontWeight: 600, color: '#000000' }}>{selectedVoucher.physician_name || 'N/A'}</span>
-                                
-                                <span style={{ color: '#000000' }}>Method:</span>
-                                <span style={{ fontWeight: 600, color: '#000000' }}>{selectedVoucher.payment_method}</span>
-                                
-                                {selectedVoucher.tca_date && (
-                                  <>
-                                    <span style={{ color: '#000000' }}>TCA Date:</span>
-                                    <span style={{ fontWeight: 700, color: '#000000' }}>{new Date(selectedVoucher.tca_date).toLocaleDateString()}</span>
-                                  </>
-                                )}
+                                <span style={{ fontWeight: 500, color: '#64748b' }}>TCA Date:</span>
+                                <span style={{ fontWeight: 700, color: '#2563eb' }}>{new Date(selectedVoucher.tca_date).toLocaleDateString()}</span>
                               </>
                             )}
                           </div>
                         </div>
                       </div>
 
-                      {/* Table of Items */}
-                      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '2rem' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ padding: '0.75rem 0', textAlign: 'left', color: '#000000', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #000000', fontWeight: 700 }}>Description</th>
-                            {!isNarrow && <th style={{ padding: '0.75rem 0', textAlign: 'center', color: '#000000', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #000000', fontWeight: 700, width: '80px' }}>Type</th>
-                            }
-                            <th style={{ padding: '0.75rem 0', textAlign: 'center', color: '#000000', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #000000', fontWeight: 700, width: isNarrow ? '40px' : '60px' }}>Qty</th>
-                            {!isNarrow && <th style={{ padding: '0.75rem 0', textAlign: 'right', color: '#000000', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #000000', fontWeight: 700, width: '120px' }}>Unit Price</th>
-                            }
-                            <th style={{ padding: '0.75rem 0', textAlign: 'right', color: '#000000', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #000000', fontWeight: 700, width: isNarrow ? '90px' : '130px' }}>Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedVoucher.items?.map(item => (
-                            <tr key={item.id} style={{ borderBottom: '1px solid #000000' }}>
-                              <td style={{ padding: isNarrow ? '0.5rem 0' : '1rem 0' }}>
-                                <div style={{ fontWeight: 600, color: '#000000', fontSize: isNarrow ? '0.8125rem' : '0.95rem' }}>{item.name}</div>
-                                {item.laboratory_name && (
-                                  <div style={{ fontSize: '0.75rem', color: '#000000', marginTop: '0.25rem' }}>Lab: {item.laboratory_name}</div>
-                                )}
-                                {isNarrow && (
-                                  <div style={{ fontSize: '0.75rem', color: '#000000', marginTop: '0.125rem' }}>
-                                    {item.item_type} @ {parseFloat(item.unit_price).toLocaleString()}
-                                  </div>
-                                )}
-                              </td>
-                              {!isNarrow && (
-                                <td style={{ padding: '1rem 0', textAlign: 'center' }}>
-                                  <span style={{ backgroundColor: '#ffffff', border: '1px solid #000000', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, color: '#000000' }}>{item.item_type}</span>
-                                </td>
-                              )}
-                              <td style={{ padding: isNarrow ? '0.5rem 0' : '1rem 0', textAlign: 'center', fontWeight: 600, color: '#000000', fontSize: isNarrow ? '0.8125rem' : '1rem' }}>{item.quantity}</td>
-                              {!isNarrow && (
-                                <td style={{ padding: '1rem 0', textAlign: 'right', color: '#000000' }}>{parseFloat(item.unit_price).toLocaleString()}</td>
-                              )}
-                              <td style={{ padding: isNarrow ? '0.5rem 0' : '1rem 0', textAlign: 'right', fontWeight: 700, color: '#000000', fontSize: isNarrow ? '0.8125rem' : '1rem' }}>{parseFloat(item.subtotal).toLocaleString()}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      {/* Items Table Card */}
+                      <div style={{ 
+                        backgroundColor: '#ffffff', 
+                        border: '1px solid #e2e8f0', 
+                        borderRadius: '8px', 
+                        overflow: 'hidden',
+                      }}>
+                        <div style={{ backgroundColor: '#f1f5f9', padding: '0.75rem 1rem', borderBottom: '1px solid #e2e8f0' }}>
+                          <h3 style={{ fontSize: '0.875rem', fontWeight: 700, color: '#334155', margin: 0 }}>
+                            Voucher Items & Services
+                          </h3>
+                        </div>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '2px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
+                                <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', width: '50px' }}>No.</th>
+                                <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#64748b' }}>Description</th>
+                                <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', textAlign: 'center', width: '110px' }}>Type</th>
+                                <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', textAlign: 'right', width: '90px' }}>Qty</th>
+                                <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', textAlign: 'right', width: '130px' }}>Unit Price</th>
+                                <th style={{ padding: '0.75rem 1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#64748b', textAlign: 'right', width: '140px' }}>Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {selectedVoucher.items?.map((item, idx) => (
+                                <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                  <td style={{ padding: '0.75rem 1rem', fontSize: '0.875rem', color: '#64748b' }}>{idx + 1}</td>
+                                  <td style={{ padding: '0.75rem 1rem' }}>
+                                    <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.875rem' }}>{item.name}</div>
+                                    {item.laboratory_name && (
+                                      <div style={{ fontSize: '0.75rem', color: '#2563eb', marginTop: '0.125rem', fontWeight: 500 }}>Lab: {item.laboratory_name}</div>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                                    <span style={{ 
+                                      display: 'inline-block',
+                                      padding: '2px 8px', 
+                                      borderRadius: '4px', 
+                                      fontSize: '0.75rem', 
+                                      fontWeight: 600, 
+                                      backgroundColor: '#f1f5f9',
+                                      color: '#334155',
+                                      border: '1px solid #cbd5e1'
+                                    }}>
+                                      {item.item_type}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: 600, color: '#1e293b', fontSize: '0.875rem' }}>{item.quantity}</td>
+                                  <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#475569', fontSize: '0.875rem' }}>{parseFloat(item.unit_price).toLocaleString()}</td>
+                                  <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: 700, color: '#0f172a', fontSize: '0.875rem' }}>{parseFloat(item.subtotal).toLocaleString()}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
 
-                      {/* Totals Section */}
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2.5rem' }}>
-                        <div style={{ width: '100%', maxWidth: isNarrow ? '100%' : '300px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', color: '#000000', fontSize: '0.875rem' }}>
+                      {/* Bottom Summary and Referrals layout */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
+                        
+                        {/* Left side: Notes and Referrals */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                          {/* Referrals Section */}
+                          {selectedVoucher.referrals && selectedVoucher.referrals.length > 0 && (
+                            <div style={{ 
+                              backgroundColor: '#f0fdf4', 
+                              border: '1px solid #bbf7d0', 
+                              borderRadius: '8px', 
+                              padding: '1.25rem',
+                            }}>
+                              <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#166534', letterSpacing: '0.05em' }}>
+                                Referral Payments
+                              </h4>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                {selectedVoucher.referrals.map(ref => (
+                                  <div key={ref.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: '#14532d' }}>
+                                    <span>{ref.referred_person_name} ({ref.item_name})</span>
+                                    <span style={{ fontWeight: 600 }}>{parseFloat(ref.commission_amount).toLocaleString()} MMK</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Notes */}
+                          {selectedVoucher.notes && (
+                            <div style={{ 
+                              backgroundColor: '#f8fafc', 
+                              border: '1px solid #e2e8f0', 
+                              borderRadius: '8px', 
+                              padding: '1.25rem',
+                            }}>
+                              <h4 style={{ margin: '0 0 0.35rem 0', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: '#475569', letterSpacing: '0.05em' }}>
+                                Notes
+                              </h4>
+                              <p style={{ margin: 0, fontSize: '0.875rem', whiteSpace: 'pre-wrap', lineHeight: '1.4', color: '#334155' }}>{selectedVoucher.notes}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right side: Financials Card */}
+                        <div style={{ 
+                          backgroundColor: '#f8fafc', 
+                          border: '1px solid #e2e8f0', 
+                          borderRadius: '8px', 
+                          padding: '1.25rem',
+                          width: '100%',
+                          boxSizing: 'border-box'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', color: '#475569', fontSize: '0.875rem' }}>
                             <span>Subtotal</span>
-                            <span style={{ fontWeight: 600, color: '#000000' }}>{parseFloat(selectedVoucher.total_amount).toLocaleString()}</span>
+                            <span style={{ fontWeight: 600, color: '#0f172a' }}>{parseFloat(selectedVoucher.total_amount).toLocaleString()} MMK</span>
                           </div>
                           {parseFloat(selectedVoucher.discount_amount) > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', color: '#000000', fontSize: '0.875rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', color: '#ef4444', fontSize: '0.875rem' }}>
                               <span>Discount</span>
-                              <span style={{ fontWeight: 600 }}>- {parseFloat(selectedVoucher.discount_amount).toLocaleString()}</span>
+                              <span style={{ fontWeight: 600 }}>- {parseFloat(selectedVoucher.discount_amount).toLocaleString()} MMK</span>
                             </div>
                           )}
                           <div style={{ 
                             display: 'flex', 
                             justifyContent: 'space-between', 
                             padding: '0.75rem 0', 
-                            borderTop: '1.5px solid #000000', 
-                            borderBottom: '4px double #000000', 
+                            borderTop: '1.5px solid #cbd5e1', 
                             marginTop: '0.25rem', 
-                            fontSize: isNarrow ? '1.1rem' : '1.25rem', 
+                            fontSize: '1.25rem', 
                             fontWeight: 800, 
-                            color: '#000000' 
+                            color: '#0f172a' 
                           }}>
                             <span>Net Total</span>
-                            <span>{parseFloat(selectedVoucher.net_amount).toLocaleString()} <span style={{ fontSize: '0.75rem', color: '#000000', fontWeight: 600 }}>MMK</span></span>
+                            <span style={{ color: '#2563eb' }}>{parseFloat(selectedVoucher.net_amount).toLocaleString()} <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>MMK</span></span>
                           </div>
                         </div>
                       </div>
-
-                      {/* Notes Box */}
-                      {selectedVoucher.notes && (
-                        <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: '#ffffff', borderLeft: '4px solid #000000', border: '1px solid #000000', borderLeftWidth: '4px', borderRadius: '4px', color: '#000000', textAlign: isNarrow ? 'center' : 'left' }}>
-                          <h4 style={{ margin: '0 0 0.35rem 0', fontSize: '0.875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notes</h4>
-                          <p style={{ margin: 0, fontSize: '0.875rem', whiteSpace: 'pre-wrap', lineHeight: '1.4' }}>{selectedVoucher.notes}</p>
-                        </div>
-                      )}
-                      
-                      {/* Footer Description */}
-                      {printSettings?.description && (
-                        <div style={{ marginTop: '2.5rem', textAlign: 'center', color: '#000000', fontSize: isNarrow ? '0.75rem' : '0.8125rem', borderTop: '1px dashed #000000', paddingTop: '1.25rem', whiteSpace: 'pre-line', lineHeight: '1.5' }}>
-                          {printSettings.description}
-                        </div>
-                      )}
                     </div>
-                    {/* End Printable Area */}
                     
                   </div>
 
@@ -827,6 +815,177 @@ export default function BillingPage() {
           }}
         />
       )}
+
+      {/* Hidden background printing container containing the actual #printable-voucher element */}
+      <div style={{ display: 'none' }}>
+        {selectedVoucher && (() => {
+          const isNarrow = isNarrowWidth(printSettings?.width);
+          return (
+            <div id="printable-voucher" style={{ 
+              backgroundColor: 'white', 
+              width: formatWithUnit(printSettings?.width) || '100%', 
+              minHeight: formatWithUnit(printSettings?.height) || 'auto', 
+              paddingTop: printSettings?.margin_top || '10px',
+              paddingRight: printSettings?.margin_right || '10px',
+              paddingBottom: printSettings?.margin_bottom || '10px',
+              paddingLeft: printSettings?.margin_left || '10px',
+              boxSizing: 'border-box'
+            }}>
+              
+              {/* Invoice Header Block - Clean compact layout without Logo, Clinic Name or Address */}
+              <div style={{ 
+                marginBottom: '0.4rem', 
+                borderBottom: '2.5px solid #000000', 
+                paddingBottom: '0.4rem', 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'flex-end'
+              }}>
+                <div>
+                  <p style={{ margin: '0', color: '#000000', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Invoice Date</p>
+                  <p style={{ margin: '0', color: '#000000', fontSize: '0.85rem', fontWeight: 600 }}>{new Date(selectedVoucher.created_at).toLocaleDateString()} {new Date(selectedVoucher.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+                
+                <div style={{ textAlign: 'right' }}>
+                  <h2 style={{ fontSize: '1.4rem', fontWeight: 900, margin: '0 0 0.125rem 0', color: '#000000', textTransform: 'uppercase', letterSpacing: '-0.025em' }}>INVOICE</h2>
+                  <p style={{ margin: '0 0 0.25rem 0', color: '#000000', fontSize: '0.9rem', fontWeight: 700 }}># {selectedVoucher.voucher_number}</p>
+                  <span style={{ 
+                    display: 'inline-block', 
+                    padding: '0.15rem 0.5rem', 
+                    backgroundColor: '#ffffff', 
+                    border: '1px solid #000000', 
+                    borderRadius: '4px', 
+                    fontSize: '0.7rem', 
+                    fontWeight: 700, 
+                    textTransform: 'uppercase', 
+                    color: '#000000' 
+                  }}>
+                    {selectedVoucher.payment_status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Patient & Service Metadata - Compact spacing closer to header line */}
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 1fr', 
+                gap: '1.5rem', 
+                marginBottom: '0.3rem',
+                textAlign: 'left'
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <h3 style={{ width: '100%', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: '#000000', borderBottom: '1px solid #000000', paddingBottom: '0.25rem', margin: '0 0 0.4rem 0', letterSpacing: '0.05em' }}>Billed To</h3>
+                  <p style={{ margin: '0 0 0.15rem 0', fontWeight: 700, fontSize: '0.95rem', color: '#000000' }}>{selectedVoucher.patient_name}</p>
+                  <p style={{ margin: '0', color: '#000000', fontSize: '0.8rem' }}>Patient ID: <span style={{ fontWeight: 600 }}>{selectedVoucher.patient_code}</span></p>
+                  {selectedVoucher.patient_phone && (
+                    <p style={{ margin: '0.15rem 0 0 0', color: '#000000', fontSize: '0.8rem' }}>Phone: <span style={{ fontWeight: 500 }}>{selectedVoucher.patient_phone}</span></p>
+                  )}
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <h3 style={{ width: '100%', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: '#000000', borderBottom: '1px solid #000000', paddingBottom: '0.25rem', margin: '0 0 0.4rem 0', letterSpacing: '0.05em' }}>Service Details</h3>
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: '80px 1fr', 
+                    gap: '0.15rem 0.35rem', 
+                    fontSize: '0.8rem',
+                    width: '100%'
+                  }}>
+                    <span style={{ color: '#000000' }}>Physician:</span>
+                    <span style={{ fontWeight: 600, color: '#000000' }}>{selectedVoucher.physician_name || 'N/A'}</span>
+                    
+                    <span style={{ color: '#000000' }}>Method:</span>
+                    <span style={{ fontWeight: 600, color: '#000000' }}>{selectedVoucher.payment_method}</span>
+                    
+                    {selectedVoucher.tca_date && (
+                      <>
+                        <span style={{ color: '#000000' }}>TCA Date:</span>
+                        <span style={{ fontWeight: 700, color: '#000000' }}>{new Date(selectedVoucher.tca_date).toLocaleDateString()}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Table of Items - Highly compact for A5 fitment up to 15 items */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1rem' }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: '0.2rem 0 0.3rem 0', textAlign: 'left', color: '#000000', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1.5px solid #000000', fontWeight: 700 }}>Description</th>
+                    <th style={{ padding: '0.2rem 0 0.3rem 0', textAlign: 'center', color: '#000000', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1.5px solid #000000', fontWeight: 700, width: '70px' }}>Type</th>
+                    <th style={{ padding: '0.2rem 0 0.3rem 0', textAlign: 'center', color: '#000000', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1.5px solid #000000', fontWeight: 700, width: '40px' }}>Qty</th>
+                    <th style={{ padding: '0.2rem 0 0.3rem 0', textAlign: 'right', color: '#000000', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1.5px solid #000000', fontWeight: 700, width: '90px' }}>Price</th>
+                    <th style={{ padding: '0.2rem 0 0.3rem 0', textAlign: 'right', color: '#000000', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1.5px solid #000000', fontWeight: 700, width: '100px' }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedVoucher.items?.map(item => (
+                    <tr key={item.id} style={{ borderBottom: '1.5px solid #000000' }}>
+                      <td style={{ padding: '0.2rem 0' }}>
+                        <div style={{ fontWeight: 600, color: '#000000', fontSize: '0.72rem', lineHeight: '1.2' }}>{item.name}</div>
+                        {item.laboratory_name && (
+                          <div style={{ fontSize: '0.62rem', color: '#475569', marginTop: '0.05rem' }}>Lab: {item.laboratory_name}</div>
+                        )}
+                      </td>
+                      <td style={{ padding: '0.2rem 0', textAlign: 'center' }}>
+                        <span style={{ border: '1px solid #000000', padding: '1px 4px', borderRadius: '3px', fontSize: '0.58rem', fontWeight: 600, color: '#000000', textTransform: 'uppercase' }}>{item.item_type}</span>
+                      </td>
+                      <td style={{ padding: '0.2rem 0', textAlign: 'center', fontWeight: 600, color: '#000000', fontSize: '0.72rem' }}>{item.quantity}</td>
+                      <td style={{ padding: '0.2rem 0', textAlign: 'right', color: '#000000', fontSize: '0.72rem' }}>{parseFloat(item.unit_price).toLocaleString()}</td>
+                      <td style={{ padding: '0.2rem 0', textAlign: 'right', fontWeight: 700, color: '#000000', fontSize: '0.72rem' }}>{parseFloat(item.subtotal).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Totals Section */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+                <div style={{ width: '100%', maxWidth: '240px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', color: '#000000', fontSize: '0.8rem' }}>
+                    <span>Subtotal</span>
+                    <span style={{ fontWeight: 600, color: '#000000' }}>{parseFloat(selectedVoucher.total_amount).toLocaleString()}</span>
+                  </div>
+                  {parseFloat(selectedVoucher.discount_amount) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', color: '#000000', fontSize: '0.8rem' }}>
+                      <span>Discount</span>
+                      <span style={{ fontWeight: 600 }}>- {parseFloat(selectedVoucher.discount_amount).toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    padding: '0.4rem 0', 
+                    borderTop: '1px solid #000000', 
+                    borderBottom: '3px double #000000', 
+                    marginTop: '0.15rem', 
+                    fontSize: '1rem', 
+                    fontWeight: 800, 
+                    color: '#000000' 
+                  }}>
+                    <span>Net Total</span>
+                    <span>{parseFloat(selectedVoucher.net_amount).toLocaleString()} <span style={{ fontSize: '0.7rem', color: '#000000', fontWeight: 600 }}>MMK</span></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes Box */}
+              {selectedVoucher.notes && (
+                <div style={{ marginTop: '0.75rem', padding: '0.5rem 0.75rem', backgroundColor: '#ffffff', border: '1px solid #000000', borderRadius: '4px', color: '#000000' }}>
+                  <h4 style={{ margin: '0 0 0.15rem 0', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notes</h4>
+                  <p style={{ margin: 0, fontSize: '0.75rem', whiteSpace: 'pre-wrap', lineHeight: '1.3' }}>{selectedVoucher.notes}</p>
+                </div>
+              )}
+              
+              {/* Footer Description */}
+              {printSettings?.description && (
+                <div style={{ marginTop: '1rem', textAlign: 'center', color: '#000000', fontSize: '0.75rem', borderTop: '1px dashed #000000', paddingTop: '0.5rem', whiteSpace: 'pre-line', lineHeight: '1.3' }}>
+                  {printSettings.description}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes slideDown { 
