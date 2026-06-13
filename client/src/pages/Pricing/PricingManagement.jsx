@@ -81,6 +81,7 @@ export default function PricingManagement() {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCategory, searchQuery, page]);
 
   const handleExport = async () => {
