@@ -2160,7 +2160,7 @@ app.put('/test-put', (req, res) => {
 // Update stock item
 app.put('/api/stock/items/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  fs.appendFileSync('hit.log', `PUT /api/stock/items/${id} hit at ${new Date().toISOString()}\n`);
+  console.log(`PUT /api/stock/items/${id} hit at ${new Date().toISOString()}`);
   const { 
     subcategory_id, item_code, name, unit, min_stock_level,
     default_purchase_price, default_sale_price, pricing_method, markup_percentage
