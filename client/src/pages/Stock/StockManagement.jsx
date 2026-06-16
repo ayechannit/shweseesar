@@ -214,6 +214,7 @@ export default function StockManagement() {
 
   const handleUpdateItem = async (e) => {
     e.preventDefault();
+    if (!window.confirm("Are you sure you want to update this item?")) return;
     try {
       const res = await apiRequest(`/stock/items/${selectedItem.id}`, {
         method: 'PUT',
@@ -236,6 +237,7 @@ export default function StockManagement() {
       alert("Please enter a non-zero adjustment quantity");
       return;
     }
+    if (!window.confirm("Are you sure you want to apply this stock adjustment?")) return;
     try {
       const res = await apiRequest('/stock/adjust', {
         method: 'POST',
@@ -624,24 +626,26 @@ export default function StockManagement() {
                     </select>
                   )}
                 </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Item Code</label>
-                <input type="text" className="form-control" required value={itemForm.item_code} onChange={e => setItemForm({...itemForm, item_code: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Item Name</label>
-                <input type="text" className="form-control" required value={itemForm.name} onChange={e => setItemForm({...itemForm, name: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Unit (e.g. Tab, Bottle, Service)</label>
-                <input type="text" className="form-control" required value={itemForm.unit} onChange={e => setItemForm({...itemForm, unit: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Min Stock Level (Alert Threshold)</label>
-                <input type="number" className="form-control" value={itemForm.min_stock_level} onChange={e => setItemForm({...itemForm, min_stock_level: e.target.value})} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label">Item Name</label>
+                  <input type="text" className="form-control" required value={itemForm.name} onChange={e => setItemForm({...itemForm, name: e.target.value})} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Item Code</label>
+                  <input type="text" className="form-control" required value={itemForm.item_code} onChange={e => setItemForm({...itemForm, item_code: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Unit (e.g. Tab, Bottle, Service)</label>
+                  <input type="text" className="form-control" required value={itemForm.unit} onChange={e => setItemForm({...itemForm, unit: e.target.value})} />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label">Min Stock Level (Alert Threshold)</label>
+                  <input type="number" className="form-control" value={itemForm.min_stock_level} onChange={e => setItemForm({...itemForm, min_stock_level: e.target.value})} />
+                </div>
+
                 <div className="form-group">
                   <label className="form-label">Default Purchase Price</label>
                   <input type="number" step="0.01" className="form-control" value={itemForm.default_purchase_price} onChange={e => setItemForm({...itemForm, default_purchase_price: parseFloat(e.target.value)})} />
@@ -724,28 +728,30 @@ export default function StockManagement() {
                     </select>
                   )}
                 </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Item Code</label>
-                <input type="text" className="form-control" required value={editForm.item_code} onChange={e => setEditForm({...editForm, item_code: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Item Name</label>
-                <input type="text" className="form-control" required value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Unit</label>
-                <input type="text" className="form-control" required value={editForm.unit} onChange={e => setEditForm({...editForm, unit: e.target.value})} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Current Stock (Read-only)</label>
-                <input type="text" className="form-control" value={selectedItem?.total_quantity} readOnly style={{ backgroundColor: '#f1f5f9' }} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Min Stock Level</label>
-                <input type="number" className="form-control" value={editForm.min_stock_level} onChange={e => setEditForm({...editForm, min_stock_level: e.target.value})} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label">Item Name</label>
+                  <input type="text" className="form-control" required value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Item Code</label>
+                  <input type="text" className="form-control" required value={editForm.item_code} onChange={e => setEditForm({...editForm, item_code: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Unit</label>
+                  <input type="text" className="form-control" required value={editForm.unit} onChange={e => setEditForm({...editForm, unit: e.target.value})} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Current Stock (Read-only)</label>
+                  <input type="text" className="form-control" value={selectedItem?.total_quantity} readOnly style={{ backgroundColor: '#f1f5f9' }} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Min Stock Level</label>
+                  <input type="number" className="form-control" value={editForm.min_stock_level} onChange={e => setEditForm({...editForm, min_stock_level: e.target.value})} />
+                </div>
+
                 <div className="form-group">
                   <label className="form-label">Default Purchase Price</label>
                   <input type="number" step="0.01" className="form-control" value={editForm.default_purchase_price} onChange={e => setEditForm({...editForm, default_purchase_price: parseFloat(e.target.value)})} />

@@ -446,6 +446,8 @@ tr:last-child td {
   width: 100%;
   max-width: 500px;
   box-shadow: var(--shadow-md);
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .modal-header {
