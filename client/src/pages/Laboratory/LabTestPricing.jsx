@@ -240,7 +240,7 @@ export default function LabTestPricing() {
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
         .results-count { font-size: 0.85rem; font-weight: 700; color: #94a3b8; }
 
-        .pricing-table-container { background: white; border-radius: 28px; border: 1px solid #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.03); overflow: hidden; }
+        .pricing-table-container { background: white; border-radius: 28px; border: 1px solid #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.03); overflow-x: auto; -webkit-overflow-scrolling: touch; }
         
         .modern-pricing-table { width: 100%; border-collapse: collapse; }
         .modern-pricing-table th { text-align: left; padding: 1.25rem 1.5rem; background: #fcfcfd; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.05em; border-bottom: 1.5px solid #f1f5f9; }

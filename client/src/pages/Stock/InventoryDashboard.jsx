@@ -184,9 +184,7 @@ export default function InventoryDashboard() {
         .modern-dashboard * { box-sizing: border-box; }
         
         .modern-dashboard {
-          padding: 2.5rem;
-          background: #f8fafc;
-          min-height: 100vh;
+          padding: 0;
           font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
           color: #1e293b;
           line-height: 1.5;
@@ -302,7 +300,7 @@ export default function InventoryDashboard() {
         .modern-card-title { font-size: 1.5rem; font-weight: 900; color: #0f172a; letter-spacing: -0.02em; }
         .modern-card-subtitle { font-size: 0.95rem; color: #94a3b8; font-weight: 600; margin-top: 0.25rem; }
 
-        .modern-chart-container-table { min-height: 300px; max-height: 500px; overflow-y: auto; }
+        .modern-chart-container-table { min-height: 300px; max-height: 500px; overflow: auto; }
         .modern-table { width: 100%; border-collapse: separate; border-spacing: 0 0.75rem; }
         .modern-table th { text-align: left; padding: 1rem; color: #94a3b8; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; position: sticky; top: 0; background: white; z-index: 10; }
         .modern-table td { padding: 1.25rem 1rem; background: #f8fafc; border-top: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; }
@@ -336,7 +334,7 @@ export default function InventoryDashboard() {
         }
         
         @media (max-width: 768px) {
-          .modern-dashboard { padding: 1.5rem; }
+          .modern-dashboard { padding: 0; }
           .modern-header-row { flex-direction: column; align-items: flex-start; }
           .modern-date-controls { width: 100%; flex-direction: column; align-items: stretch; }
           .modern-refresh-btn { margin-left: 0; margin-top: 0.5rem; }

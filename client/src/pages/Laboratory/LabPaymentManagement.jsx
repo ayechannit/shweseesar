@@ -105,7 +105,7 @@ export default function LabPaymentManagement() {
 
   return (
     <div className="lab-payment-page" style={{ paddingBottom: '3rem' }}>
-      <div className="page-header" style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="page-header-responsive">
         <div>
           <h1 style={{ fontSize: '1.875rem', fontWeight: 900, color: '#0f172a', margin: 0 }}>External Lab Payments</h1>
           <p style={{ color: '#64748b', marginTop: '0.25rem' }}>Track and settle discounted balances with partner laboratories.</p>
@@ -120,7 +120,7 @@ export default function LabPaymentManagement() {
 
       {/* Filters */}
       <div className="card-modern" style={{ padding: '2rem', marginBottom: '2rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', alignItems: 'flex-end' }}>
+        <div className="filters-grid-modern">
           <div className="form-group-modern">
             <label>Partner Laboratory</label>
             <select value={filters.laboratory_id} onChange={e => setFilters({...filters, laboratory_id: e.target.value})}>
@@ -152,7 +152,7 @@ export default function LabPaymentManagement() {
       </div>
 
       {/* Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+      <div className="summary-grid-modern">
         <div className="card-modern metric-box" style={{ borderLeft: '6px solid #3b82f6' }}>
           <span className="metric-label">Total Net Payable</span>
           <div className="metric-value">{totalNetPayable.toLocaleString()} <small>MMK</small></div>
@@ -165,7 +165,7 @@ export default function LabPaymentManagement() {
 
       {/* Main Table */}
       <div className="card-modern overflow-hidden">
-        <div style={{ overflowX: 'auto' }}>
+        <div className="table-responsive">
           <table className="table-modern">
             <thead>
               <tr>
@@ -235,6 +235,31 @@ export default function LabPaymentManagement() {
 
         .card-modern { background: white; border-radius: 20px; border: 1px solid #f1f5f9; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); overflow: hidden; }
         
+        /* Responsive Page Header */
+        .page-header-responsive {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 2.5rem;
+          flex-wrap: wrap;
+          gap: 1.5rem;
+        }
+
+        /* Responsive Grids */
+        .filters-grid-modern {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 1.5rem;
+          align-items: flex-end;
+        }
+
+        .summary-grid-modern {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 1.5rem;
+          margin-bottom: 2.5rem;
+        }
+
         .form-group-modern label { font-size: 0.75rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.75rem; }
         .form-group-modern select { width: 100%; height: 46px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 0 1rem; font-weight: 600; color: #1e293b; outline: none; }
         
@@ -264,6 +289,24 @@ export default function LabPaymentManagement() {
         .status-pill.paid { background: #ecfdf5; color: #059669; }
 
         input[type="checkbox"] { width: 18px; height: 18px; border-radius: 6px; border: 2px solid #cbd5e1; cursor: pointer; }
+
+        /* Media Queries */
+        @media (max-width: 1200px) {
+          .filters-grid-modern { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
+        @media (max-width: 768px) {
+          .page-header-responsive { flex-direction: column; align-items: stretch; gap: 1rem; }
+          .page-header-responsive button { width: 100%; justify-content: center; height: 48px; }
+          .summary-grid-modern { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 640px) {
+          .filters-grid-modern { grid-template-columns: 1fr; }
+          .date-input-group { flex-direction: column; height: auto; padding: 0.5rem 1rem; align-items: stretch; gap: 0.5rem; }
+          .date-input-group input { height: 38px; width: 100%; text-align: center; }
+          .date-input-group svg { transform: rotate(90deg); margin: 0.25rem 0; align-self: center; }
+        }
       `}} />
     </div>
   );

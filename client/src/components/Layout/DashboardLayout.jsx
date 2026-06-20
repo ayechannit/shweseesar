@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { 
   Users, UserPlus, Stethoscope, HeartPulse, Truck, Share2, 
@@ -21,11 +21,19 @@ const masterDataLinks = [
 ];
 
 export default function DashboardLayout() {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(true);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(window.innerWidth > 768);
   const [isMasterDataOpen, setIsMasterDataOpen] = useState(false);
   const { user, logout, hasPermission } = useAuth();
   
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDrawerOpen(window.innerWidth > 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const toggleDrawer = () => setIsDrawerOpen(!isDrawerOpen);
 
@@ -43,6 +51,11 @@ export default function DashboardLayout() {
 
   return (
     <div className="app-container">
+      {/* Drawer Overlay for Mobile */}
+      {isDrawerOpen && (
+        <div className="drawer-overlay-modern" onClick={() => setIsDrawerOpen(false)} />
+      )}
+
       {/* Modern Sidebar */}
       <aside className={`sidebar-modern ${isDrawerOpen ? 'open' : 'closed'}`}>
         <div className="sidebar-header-modern">
@@ -338,6 +351,7 @@ export default function DashboardLayout() {
           display: flex;
           flex-direction: column;
           height: 100%;
+          min-width: 0;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
@@ -354,7 +368,9 @@ export default function DashboardLayout() {
         .content-scroller {
           flex: 1;
           overflow-y: auto;
+          overflow-x: hidden;
           padding: 2rem;
+          min-width: 0;
         }
 
         .content-inner {
@@ -365,11 +381,42 @@ export default function DashboardLayout() {
         .mobile-close { display: none; background: none; border: none; color: #94a3b8; }
         .menu-toggle { background: none; border: none; color: #64748b; cursor: pointer; }
 
+        .drawer-overlay-modern {
+          display: none;
+        }
+
         @media (max-width: 768px) {
           .sidebar-modern { position: fixed; height: 100%; left: 0; }
           .sidebar-modern.closed { left: calc(-1 * var(--sidebar-width)); margin-left: 0; }
           .main-container-modern { width: 100%; }
           .mobile-close { display: block; }
+          
+          .drawer-overlay-modern {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.4);
+            z-index: 999;
+            backdrop-filter: blur(4px);
+            animation: fadeIn 0.2s ease-out;
+          }
+          
+          .content-scroller {
+            padding: 1.25rem 1rem;
+          }
+          
+          .topbar-modern {
+            padding: 0 1rem;
+            gap: 1rem;
+          }
+          
+          @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
         }
 
         /* Utility Classes */

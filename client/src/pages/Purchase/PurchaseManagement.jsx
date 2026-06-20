@@ -804,7 +804,7 @@ export default function PurchaseManagement() {
                 </div>
 
                 <div style={{ flex: 1, minHeight: '200px', border: '1px solid #e2e8f0', borderRadius: '0.75rem', overflow: 'hidden' }}>
-                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  <div style={{ maxHeight: '300px', overflowY: 'auto', overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', margin: 0 }}>
                       <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f8fafc', zIndex: 1, borderBottom: '1px solid #e2e8f0' }}>
                         <tr>
@@ -1003,30 +1003,32 @@ export default function PurchaseManagement() {
               </div>
 
               <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem' }}>Items</h3>
-              <table style={{ marginBottom: '1.5rem' }}>
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Batch</th>
-                    <th>Expiry</th>
-                    <th>Qty</th>
-                    <th>Price</th>
-                    <th>Subtotal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedPurchase.items?.map(item => (
-                    <tr key={item.id}>
-                      <td>{item.item_name}</td>
-                      <td>{item.batch_number || '-'}</td>
-                      <td>{item.expiry_date ? item.expiry_date.split('T')[0] : '-'}</td>
-                      <td>{item.quantity}</td>
-                      <td>{parseFloat(item.purchase_price).toLocaleString()}</td>
-                      <td>{parseFloat(item.subtotal).toLocaleString()}</td>
+              <div className="table-responsive">
+                <table style={{ marginBottom: '1.5rem' }}>
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Batch</th>
+                      <th>Expiry</th>
+                      <th>Qty</th>
+                      <th>Price</th>
+                      <th>Subtotal</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {selectedPurchase.items?.map(item => (
+                      <tr key={item.id}>
+                        <td>{item.item_name}</td>
+                        <td>{item.batch_number || '-'}</td>
+                        <td>{item.expiry_date ? item.expiry_date.split('T')[0] : '-'}</td>
+                        <td>{item.quantity}</td>
+                        <td>{parseFloat(item.purchase_price).toLocaleString()}</td>
+                        <td>{parseFloat(item.subtotal).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
               <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
                 <div style={{ display: 'flex', width: '300px', justifyContent: 'space-between' }}>

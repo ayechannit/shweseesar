@@ -344,7 +344,7 @@ export default function GPPackageManagement() {
                 </div>
 
                 {/* Selected Items List */}
-                <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #f1f5f9', borderRadius: '8px' }}>
+                <div style={{ maxHeight: '300px', overflowY: 'auto', overflowX: 'auto', border: '1px solid #f1f5f9', borderRadius: '8px' }}>
                   <table className="table" style={{ margin: 0 }}>
                     <thead style={{ backgroundColor: '#f8fafc' }}>
                       <tr>
