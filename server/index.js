@@ -1485,7 +1485,7 @@ app.get('/api/reports/stock', authenticateToken, async (req, res) => {
         ORDER BY margin_amt DESC LIMIT 20`),
       // Purchase Summary by Supplier
       db.query(`
-        SELECT s.company_name as supplier, COUNT(p.id) as invoice_count, SUM(p.total_amount) as total_purchased
+        SELECT s.company_name as supplier, COUNT(p.id) as invoice_count, SUM(p.total_amount - p.discount_amount) as total_purchased
         FROM purchases p
         JOIN suppliers s ON p.supplier_id = s.id
         WHERE p.created_at >= $1 AND p.created_at <= $2
