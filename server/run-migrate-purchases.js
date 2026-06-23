@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS purchases (
     invoice_number VARCHAR(100) UNIQUE NOT NULL,
     supplier_id INTEGER NOT NULL,
     total_amount DECIMAL(12, 2) DEFAULT 0.00,
+    discount_amount DECIMAL(12, 2) DEFAULT 0.00,
     paid_amount DECIMAL(12, 2) DEFAULT 0.00,
     balance_amount DECIMAL(12, 2) DEFAULT 0.00,
     payment_method VARCHAR(50),

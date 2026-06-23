@@ -53,6 +53,7 @@ export default function PurchaseManagement() {
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [notes, setNotes] = useState('');
   const [paidAmount, setPaidAmount] = useState(0);
+  const [discountAmount, setDiscountAmount] = useState(0);
   
   // Searchable Dropdown State
   const [supplierSearch, setSupplierSearch] = useState('');
@@ -174,6 +175,7 @@ export default function PurchaseManagement() {
       setPaymentMethod(data.payment_method);
       setNotes(data.notes || '');
       setPaidAmount(parseFloat(data.paid_amount) || 0);
+      setDiscountAmount(parseFloat(data.discount_amount) || 0);
       setItems(data.items.map(item => ({
         ...item,
         purchase_price: parseFloat(item.purchase_price),
@@ -351,7 +353,8 @@ export default function PurchaseManagement() {
   };
 
   const totalAmount = items.reduce((sum, item) => sum + (parseFloat(item.subtotal) || 0), 0);
-  const balanceAmount = totalAmount - (parseFloat(paidAmount) || 0);
+  const netAmount = totalAmount - (parseFloat(discountAmount) || 0);
+  const balanceAmount = netAmount - (parseFloat(paidAmount) || 0);
 
   const handleSaveSupplier = async (e) => {
     e.preventDefault();
@@ -400,7 +403,8 @@ export default function PurchaseManagement() {
       supplier_id: supplierId,
       items: items,
       total_amount: totalAmount,
-      paid_amount: paidAmount,
+      discount_amount: parseFloat(discountAmount) || 0,
+      paid_amount: parseFloat(paidAmount) || 0,
       balance_amount: balanceAmount,
       payment_method: paymentMethod,
       notes: notes
@@ -424,6 +428,7 @@ export default function PurchaseManagement() {
         setSupplierSearch('');
         setItems([]);
         setPaidAmount(0);
+        setDiscountAmount(0);
         setNotes('');
       } else {
         const errorData = await res.json();
@@ -440,7 +445,7 @@ export default function PurchaseManagement() {
       <div className="page-header">
         <h1 className="page-title">Purchases</h1>
         <div className="header-actions">
-          <button className="btn btn-primary" onClick={() => { setIsEditMode(false); setEditingId(null); setSupplierId(''); setSupplierSearch(''); setItems([]); setPaidAmount(0); setNotes(''); setIsEntryOpen(true); }}>
+          <button className="btn btn-primary" onClick={() => { setIsEditMode(false); setEditingId(null); setSupplierId(''); setSupplierSearch(''); setItems([]); setPaidAmount(0); setDiscountAmount(0); setNotes(''); setIsEntryOpen(true); }}>
             <Plus size={16} /> New Purchase Invoice
           </button>
         </div>
@@ -492,6 +497,8 @@ export default function PurchaseManagement() {
                   <th>Invoice No.</th>
                   <th>Supplier</th>
                   <th>Total Amount</th>
+                  <th>Discount</th>
+                  <th>Net Amount</th>
                   <th>Paid</th>
                   <th>Balance</th>
                   <th>Payment</th>
@@ -501,20 +508,28 @@ export default function PurchaseManagement() {
               <tbody>
                 {purchases.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>No purchases found.</td>
+                    <td colSpan={10} style={{ textAlign: 'center', padding: '2rem' }}>No purchases found.</td>
                   </tr>
                 ) : (
-                  purchases.map(p => (
-                    <tr key={p.id}>
-                      <td>{new Date(p.created_at).toLocaleDateString()}</td>
-                      <td><strong>{p.invoice_number}</strong></td>
-                      <td>{p.supplier_name}</td>
-                      <td>{parseFloat(p.total_amount).toLocaleString()}</td>
-                      <td>{parseFloat(p.paid_amount).toLocaleString()}</td>
-                      <td style={{ color: parseFloat(p.balance_amount) > 0 ? '#ef4444' : 'inherit' }}>
-                        {parseFloat(p.balance_amount).toLocaleString()}
-                      </td>
-                      <td><span className="status-badge" style={{ background: '#f1f5f9', color: '#475569' }}>{p.payment_method}</span></td>
+                  purchases.map(p => {
+                    const grossAmount = parseFloat(p.total_amount) || 0;
+                    const discountAmt = parseFloat(p.discount_amount) || 0;
+                    const netAmt = grossAmount - discountAmt;
+                    return (
+                      <tr key={p.id}>
+                        <td>{new Date(p.created_at).toLocaleDateString()}</td>
+                        <td><strong>{p.invoice_number}</strong></td>
+                        <td>{p.supplier_name}</td>
+                        <td>{grossAmount.toLocaleString()}</td>
+                        <td style={{ color: discountAmt > 0 ? '#ea580c' : 'inherit', fontWeight: discountAmt > 0 ? 600 : 'normal' }}>
+                          {discountAmt > 0 ? `-${discountAmt.toLocaleString()}` : '0'}
+                        </td>
+                        <td style={{ fontWeight: 700, color: '#0f172a' }}>{netAmt.toLocaleString()}</td>
+                        <td>{parseFloat(p.paid_amount).toLocaleString()}</td>
+                        <td style={{ color: parseFloat(p.balance_amount) > 0 ? '#ef4444' : 'inherit' }}>
+                          {parseFloat(p.balance_amount).toLocaleString()}
+                        </td>
+                        <td><span className="status-badge" style={{ background: '#f1f5f9', color: '#475569' }}>{p.payment_method}</span></td>
                       <td style={{ textAlign: 'center', position: 'relative' }}>
                          <div className="action-dropdown-container" style={{ position: 'relative', display: 'inline-block' }}>
                            <button 
@@ -596,7 +611,8 @@ export default function PurchaseManagement() {
                          </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -900,13 +916,39 @@ export default function PurchaseManagement() {
                     <span style={{ color: '#64748b', fontWeight: 600 }}>Total Items:</span>
                     <span style={{ fontWeight: 800, color: '#1e293b' }}>{items.length}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1.25rem' }}>
-                    <span style={{ color: '#64748b', fontWeight: 600 }}>Total Amount:</span>
-                    <span style={{ fontWeight: 900, color: '#0f172a' }}>{totalAmount.toLocaleString()} <span style={{ fontSize: '0.875rem', color: '#94a3b8' }}>MMK</span></span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Gross Total:</span>
+                    <span style={{ fontWeight: 800, color: '#0f172a' }}>{totalAmount.toLocaleString()} <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>MMK</span></span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1.25rem', paddingTop: '0.5rem', borderTop: '1px dashed #e2e8f0' }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Net Total:</span>
+                    <span style={{ fontWeight: 900, color: '#0f172a' }}>{netAmount.toLocaleString()} <span style={{ fontSize: '0.875rem', color: '#94a3b8' }}>MMK</span></span>
                   </div>
                 </div>
 
                 <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '1rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+                  <div className="form-group" style={{ margin: '0 0 1rem 0' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 700, color: '#475569' }}>Discount Amount</label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontWeight: 700 }}>MMK</span>
+                      <input 
+                        type="number" 
+                        value={discountAmount} 
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            setDiscountAmount('');
+                          } else {
+                            setDiscountAmount(parseFloat(val) || 0);
+                          }
+                        }} 
+                        style={{ width: '100%', padding: '1rem 1rem 1rem 3.5rem', borderRadius: '0.5rem', border: '2px solid #cbd5e1', fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', outline: 'none', transition: 'border-color 0.2s' }}
+                        onFocus={e => e.target.style.borderColor = '#4f46e5'}
+                        onBlur={e => e.target.style.borderColor = '#cbd5e1'}
+                      />
+                    </div>
+                  </div>
+
                   <div className="form-group" style={{ margin: '0 0 1rem 0' }}>
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 700, color: '#475569' }}>Payment Method</label>
                     <select 
@@ -1032,14 +1074,22 @@ export default function PurchaseManagement() {
 
               <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
                 <div style={{ display: 'flex', width: '300px', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#64748b' }}>Total Amount:</span>
+                  <span style={{ color: '#64748b' }}>Gross Total:</span>
                   <span style={{ fontWeight: 600 }}>{parseFloat(selectedPurchase.total_amount).toLocaleString()}</span>
+                </div>
+                <div style={{ display: 'flex', width: '300px', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#64748b' }}>Discount:</span>
+                  <span style={{ fontWeight: 600 }}>{parseFloat(selectedPurchase.discount_amount || 0).toLocaleString()}</span>
+                </div>
+                <div style={{ display: 'flex', width: '300px', justifyContent: 'space-between', borderTop: '1px dashed #cbd5e1', paddingTop: '0.25rem' }}>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Net Total:</span>
+                  <span style={{ fontWeight: 700 }}>{(parseFloat(selectedPurchase.total_amount) - parseFloat(selectedPurchase.discount_amount || 0)).toLocaleString()}</span>
                 </div>
                 <div style={{ display: 'flex', width: '300px', justifyContent: 'space-between' }}>
                   <span style={{ color: '#64748b' }}>Paid ({selectedPurchase.payment_method}):</span>
                   <span style={{ fontWeight: 600 }}>{parseFloat(selectedPurchase.paid_amount).toLocaleString()}</span>
                 </div>
-                <div style={{ display: 'flex', width: '300px', justifyContent: 'space-between', fontSize: '1.125rem', color: parseFloat(selectedPurchase.balance_amount) > 0 ? '#ef4444' : 'inherit' }}>
+                <div style={{ display: 'flex', width: '300px', justifyContent: 'space-between', fontSize: '1.125rem', color: parseFloat(selectedPurchase.balance_amount) > 0 ? '#ef4444' : 'inherit', borderTop: '1px solid #cbd5e1', paddingTop: '0.25rem' }}>
                   <span style={{ fontWeight: 600 }}>Balance:</span>
                   <span style={{ fontWeight: 600 }}>{parseFloat(selectedPurchase.balance_amount).toLocaleString()}</span>
                 </div>

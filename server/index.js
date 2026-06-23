@@ -581,7 +581,7 @@ app.get('/api/dashboard/purchase', authenticateToken, async (req, res) => {
     const [metricsData, supplierSummaryData, unpaidInvoicesData] = await Promise.all([
       db.query(`
         SELECT 
-          COALESCE(SUM(total_amount), 0) as total_purchases,
+          COALESCE(SUM(total_amount - discount_amount), 0) as total_purchases,
           COALESCE(SUM(paid_amount), 0) as total_paid,
           COALESCE(SUM(balance_amount), 0) as total_balance
         FROM purchases
@@ -593,7 +593,7 @@ app.get('/api/dashboard/purchase', authenticateToken, async (req, res) => {
           s.id as supplier_id,
           s.company_name as supplier_name,
           COUNT(p.id) as total_invoices,
-          COALESCE(SUM(p.total_amount), 0) as total_purchased,
+          COALESCE(SUM(p.total_amount - p.discount_amount), 0) as total_purchased,
           COALESCE(SUM(p.paid_amount), 0) as total_paid,
           COALESCE(SUM(p.balance_amount), 0) as total_balance
         FROM purchases p
@@ -3599,11 +3599,11 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { 
     supplier_id, items, 
-    total_amount, paid_amount, balance_amount, 
+    total_amount, discount_amount, paid_amount, balance_amount, 
     payment_method, notes 
   } = req.body;
 
-  console.log('PUT PURCHASE REQUEST:', { id, supplier_id, total_items: items?.length });
+  console.log('PUT PURCHASE REQUEST:', { id, supplier_id, total_items: items?.length, discount_amount });
 
   const client = await db.pool.connect();
   try {
@@ -3648,10 +3648,10 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
     // 4. Update Purchase Record
     await client.query(`
       UPDATE purchases 
-      SET supplier_id = $1, total_amount = $2, paid_amount = $3, balance_amount = $4, 
-          payment_method = $5, notes = $6, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $7
-    `, [supplier_id, total_amount, paid_amount, balance_amount, payment_method, notes, id]);
+      SET supplier_id = $1, total_amount = $2, discount_amount = $3, paid_amount = $4, balance_amount = $5, 
+          payment_method = $6, notes = $7, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $8
+    `, [supplier_id, total_amount, discount_amount || 0, paid_amount, balance_amount, payment_method, notes, id]);
 
     // 5. Insert New Items & Update Stock
     for (const item of items) {
@@ -3773,7 +3773,7 @@ app.get('/api/purchases/:id', authenticateToken, async (req, res) => {
 app.post('/api/purchases', authenticateToken, async (req, res) => {
   const { 
     supplier_id, items, 
-    total_amount, paid_amount, balance_amount, 
+    total_amount, discount_amount, paid_amount, balance_amount, 
     payment_method, notes 
   } = req.body;
 
@@ -3788,10 +3788,10 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
 
     // 1. Insert Purchase Record
     const pRes = await client.query(`
-      INSERT INTO purchases (invoice_number, supplier_id, total_amount, paid_amount, balance_amount, payment_method, notes, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO purchases (invoice_number, supplier_id, total_amount, discount_amount, paid_amount, balance_amount, payment_method, notes, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id
-    `, [invoice_number, supplier_id, total_amount, paid_amount, balance_amount, payment_method, notes, req.user.id]);
+    `, [invoice_number, supplier_id, total_amount, discount_amount || 0, paid_amount, balance_amount, payment_method, notes, req.user.id]);
     const purchaseId = pRes.rows[0].id;
 
     // 2. Insert Items & Update Stock
