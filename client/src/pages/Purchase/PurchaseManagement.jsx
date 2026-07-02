@@ -786,6 +786,7 @@ export default function PurchaseManagement() {
                         value={currentItem.quantity} 
                         onChange={e => handleQuantityChange(e.target.value)} 
                         style={{ width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.875rem', outline: 'none' }}
+                        onWheel={(e) => e.target.blur()}
                       />
                     </div>
                     <div>
@@ -796,6 +797,7 @@ export default function PurchaseManagement() {
                         value={currentItem.purchase_price} 
                         onChange={e => handlePurchasePriceChange(e.target.value)} 
                         style={{ width: '100%', padding: '0.6rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.875rem', outline: 'none' }}
+                        onWheel={(e) => e.target.blur()}
                       />
                     </div>
                     <div>
@@ -877,6 +879,7 @@ export default function PurchaseManagement() {
                                   value={item.quantity} 
                                   min="1"
                                   onChange={(e) => updateItemQuantity(idx, e.target.value)}
+                                  onWheel={(e) => e.target.blur()}
                                   style={{ 
                                     width: '60px', 
                                     padding: '0.25rem 0.5rem', 
@@ -942,6 +945,7 @@ export default function PurchaseManagement() {
                             setDiscountAmount(parseFloat(val) || 0);
                           }
                         }} 
+                        onWheel={(e) => e.target.blur()}
                         style={{ width: '100%', padding: '1rem 1rem 1rem 3.5rem', borderRadius: '0.5rem', border: '2px solid #cbd5e1', fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', outline: 'none', transition: 'border-color 0.2s' }}
                         onFocus={e => e.target.style.borderColor = '#4f46e5'}
                         onBlur={e => e.target.style.borderColor = '#cbd5e1'}
@@ -977,6 +981,7 @@ export default function PurchaseManagement() {
                             setPaidAmount(parseFloat(val) || 0);
                           }
                         }} 
+                        onWheel={(e) => e.target.blur()}
                         style={{ width: '100%', padding: '1rem 1rem 1rem 3.5rem', borderRadius: '0.5rem', border: '2px solid #cbd5e1', fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', outline: 'none', transition: 'border-color 0.2s' }}
                         onFocus={e => e.target.style.borderColor = '#4f46e5'}
                         onBlur={e => e.target.style.borderColor = '#cbd5e1'}

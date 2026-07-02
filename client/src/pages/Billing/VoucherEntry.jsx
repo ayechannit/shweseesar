@@ -85,10 +85,21 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
           phone_number: v.patient_phone
         });
         setSelectedPhysicianId(v.physician_id || '');
-        const mappedItems = v.items.map(i => ({
-          ...i,
-          is_lab: i.item_type === 'INVESTIGATION'
-        }));
+        const mappedItems = v.items.map(i => {
+          const unitPrice = parseFloat(i.unit_price) || 0;
+          return {
+            item_type: i.item_type,
+            item_id: i.item_id,
+            name: i.name,
+            quantity: i.quantity,
+            unit_price: unitPrice,
+            original_price: unitPrice > 0 ? unitPrice : 0,
+            is_foc: unitPrice === 0,
+            subtotal: parseFloat(i.subtotal) || 0,
+            laboratory_id: i.laboratory_id || null,
+            is_lab: i.item_type === 'INVESTIGATION'
+          };
+        });
         setSelectedItems(mappedItems);
         const mappedReferrals = v.referrals.map(r => ({
           referred_person_id: r.referred_person_id,
@@ -129,12 +140,36 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
       const lData = await lRes.json();
       const rData = await rRes.json();
 
+      const fetchedStockItems = sData.data || [];
+      const fetchedGpPackages = gData.data || [];
+
       setPatients(pData.data || []);
       setPhysicians(dData.data || []);
-      setStockItems(sData.data || []);
-      setGpPackages(gData.data || []);
+      setStockItems(fetchedStockItems);
+      setGpPackages(fetchedGpPackages);
       setLaboratories(lData.data || []);
       setReferredPersons(rData.data || []);
+
+      // If we are editing, resolve the original_prices for selected items that are 0 (which means they were FOC)
+      setSelectedItems(prevItems => {
+        if (!prevItems || prevItems.length === 0) return prevItems;
+        return prevItems.map(item => {
+          let original_price = item.original_price;
+          if (original_price === undefined || original_price === 0) {
+            if (item.item_type === 'PACKAGE') {
+              const pkg = fetchedGpPackages.find(p => p.id === item.item_id);
+              if (pkg) original_price = parseFloat(pkg.price) || 0;
+            } else {
+              const sItem = fetchedStockItems.find(si => si.id === item.item_id);
+              if (sItem) original_price = parseFloat(sItem.default_sale_price) || 0;
+            }
+          }
+          return {
+            ...item,
+            original_price: original_price || item.unit_price || 0
+          };
+        });
+      });
     } catch (err) {
       console.error('Fetch error:', err);
     }
@@ -182,6 +217,8 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
         name: name,
         quantity: 1,
         unit_price: parseFloat(price) || 0,
+        original_price: parseFloat(price) || 0,
+        is_foc: false,
         subtotal: parseFloat(price) || 0,
         laboratory_id: null,
         is_lab: isLab // Helper for UI
@@ -196,6 +233,14 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
   const removeItem = (index) => {
     const newItems = [...selectedItems];
     newItems.splice(index, 1);
+    setSelectedItems(newItems);
+  };
+
+  const handleFocToggle = (index, checked) => {
+    const newItems = [...selectedItems];
+    newItems[index].is_foc = checked;
+    newItems[index].unit_price = checked ? 0 : (newItems[index].original_price || 0);
+    newItems[index].subtotal = (parseFloat(newItems[index].quantity) || 0) * (parseFloat(newItems[index].unit_price) || 0);
     setSelectedItems(newItems);
   };
 
@@ -536,14 +581,26 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
                           type="number" className="form-control text-center" style={{ height: '40px', fontWeight: 700 }}
                           value={item.quantity}
                           onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
+                          onWheel={(e) => e.target.blur()}
                         />
                       </td>
                       <td style={{ padding: '1rem' }}>
                         <input 
-                          type="number" className="form-control" style={{ height: '40px', fontWeight: 600 }}
+                          type="number" className="form-control" style={{ height: '40px', fontWeight: 600, backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
                           value={item.unit_price}
-                          onChange={(e) => updateItem(idx, 'unit_price', e.target.value)}
+                          readOnly
+                          onWheel={(e) => e.target.blur()}
                         />
+                        <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <input 
+                            type="checkbox" 
+                            id={`foc-${idx}`}
+                            checked={!!item.is_foc} 
+                            onChange={(e) => handleFocToggle(idx, e.target.checked)}
+                            style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                          />
+                          <label htmlFor={`foc-${idx}`} style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>FOC</label>
+                        </div>
                       </td>
                       <td style={{ padding: '1rem', fontWeight: 800, color: '#1e293b', fontSize: '1.1rem' }}>
                         {item.subtotal.toLocaleString()}
@@ -657,6 +714,7 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
                     type="number" className="form-control" style={{ height: '36px', textAlign: 'right', fontWeight: 700, color: '#ef4444' }}
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
+                    onWheel={(e) => e.target.blur()}
                   />
                 </div>
               </div>
