@@ -16,7 +16,7 @@ export default function ClinicReferralTransaction() {
     notes: ''
   });
 
-  const [updateForm, setUpdateForm] = useState({ visit_type: 'OPD' });
+  const [updateForm, setUpdateForm] = useState({ visit_type: [] });
   const [selectedTx, setSelectedTx] = useState(null);
 
   const [patients, setPatients] = useState([]);
@@ -148,12 +148,16 @@ export default function ClinicReferralTransaction() {
 
   const handleOpenUpdateModal = (tx) => {
     setSelectedTx(tx);
-    setUpdateForm({ visit_type: 'OPD' });
+    setUpdateForm({ visit_type: [] });
     setIsUpdateModalOpen(true);
   };
 
   const handleUpdateVisitType = async (e) => {
     e.preventDefault();
+    if (!updateForm.visit_type || updateForm.visit_type.length === 0) {
+      alert('Please select at least one visit type.');
+      return;
+    }
     try {
       const res = await apiRequest(`/clinic-referral-transactions/${selectedTx.id}/visit-type`, {
         method: 'PUT',
@@ -245,6 +249,8 @@ export default function ClinicReferralTransaction() {
               <option value="OPD">OPD</option>
               <option value="OT">OT</option>
               <option value="ADMISSION">ADMISSION</option>
+              <option value="ULTRASOUND">ULTRASOUND</option>
+              <option value="XRAY">XRAY</option>
             </select>
           </div>
           <div>
@@ -337,9 +343,19 @@ export default function ClinicReferralTransaction() {
                         <td>{row.refer_clinic_name}</td>
                         <td>
                           {row.visit_type ? (
-                            <span className={`badge ${row.visit_type === 'OPD' ? 'bg-blue-100 text-blue-800' : row.visit_type === 'OT' ? 'bg-purple-100 text-purple-800' : 'bg-red-100 text-red-800'}`}>
-                              {row.visit_type}
-                            </span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', justifyContent: 'center' }}>
+                              {row.visit_type.split(', ').map((vt) => (
+                                <span key={vt} className={`badge ${
+                                  vt === 'OPD' ? 'bg-blue-100 text-blue-800' : 
+                                  vt === 'OT' ? 'bg-purple-100 text-purple-800' : 
+                                  vt === 'ADMISSION' ? 'bg-red-100 text-red-800' : 
+                                  vt === 'ULTRASOUND' ? 'bg-yellow-100 text-yellow-800' : 
+                                  'bg-green-100 text-green-800'
+                                }`}>
+                                  {vt}
+                                </span>
+                              ))}
+                            </div>
                           ) : (
                             <span className="badge bg-gray-100 text-gray-800">Pending</span>
                           )}
@@ -486,17 +502,31 @@ export default function ClinicReferralTransaction() {
                 <input type="text" className="form-control" value={selectedTx?.patient_name || ''} disabled />
               </div>
               <div className="form-group">
-                <label className="form-label">Visit Type *</label>
-                <select
-                  className="form-control"
-                  required
-                  value={updateForm.visit_type}
-                  onChange={(e) => setUpdateForm({ visit_type: e.target.value })}
-                >
-                  <option value="OPD">OPD</option>
-                  <option value="OT">OT</option>
-                  <option value="ADMISSION">ADMISSION</option>
-                </select>
+                <label className="form-label">Visit Types * (Choose multiple)</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  {['OPD', 'OT', 'ADMISSION', 'ULTRASOUND', 'XRAY'].map((vt) => {
+                    const isChecked = updateForm.visit_type?.includes(vt);
+                    return (
+                      <label key={vt} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            let newTypes = [...(updateForm.visit_type || [])];
+                            if (e.target.checked) {
+                              if (!newTypes.includes(vt)) newTypes.push(vt);
+                            } else {
+                              newTypes = newTypes.filter((t) => t !== vt);
+                            }
+                            setUpdateForm({ visit_type: newTypes });
+                          }}
+                          style={{ width: '1.2rem', height: '1.2rem', accentColor: '#2563eb' }}
+                        />
+                        {vt}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setIsUpdateModalOpen(false)}>

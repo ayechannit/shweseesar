@@ -369,33 +369,48 @@ app.post('/api/clinic-referral-transactions', authenticateToken, async (req, res
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
-  if (visit_type && !['OPD', 'OT', 'ADMISSION'].includes(visit_type)) {
-    return res.status(400).json({ error: 'Invalid visit type' });
+  let visitTypesArray = [];
+  if (Array.isArray(visit_type)) {
+    visitTypesArray = visit_type.map(vt => vt.trim().toUpperCase());
+  } else if (typeof visit_type === 'string' && visit_type.trim() !== '') {
+    visitTypesArray = visit_type.split(',').map(vt => vt.trim().toUpperCase());
+  }
+
+  const validTypes = ['OPD', 'OT', 'ADMISSION', 'ULTRASOUND', 'XRAY'];
+  const hasInvalidType = visitTypesArray.some(vt => !validTypes.includes(vt));
+  if (hasInvalidType) {
+    return res.status(400).json({ error: 'Invalid visit type selected' });
   }
 
   try {
     let commission_amount = 0.00;
     
-    if (visit_type) {
+    if (visitTypesArray.length > 0) {
       const clinicRes = await db.query(
-        'SELECT opd_commission, ot_commission, admission_commission FROM refer_clinics WHERE id = $1',
+        'SELECT opd_commission, ot_commission, admission_commission, ultrasound_commission, xray_commission FROM refer_clinics WHERE id = $1',
         [refer_clinic_id]
       );
       
       if (clinicRes.rows.length > 0) {
         const clinic = clinicRes.rows[0];
-        if (visit_type === 'OPD') commission_amount = clinic.opd_commission;
-        else if (visit_type === 'OT') commission_amount = clinic.ot_commission;
-        else if (visit_type === 'ADMISSION') commission_amount = clinic.admission_commission;
+        visitTypesArray.forEach(vt => {
+          if (vt === 'OPD') commission_amount += parseFloat(clinic.opd_commission || 0);
+          else if (vt === 'OT') commission_amount += parseFloat(clinic.ot_commission || 0);
+          else if (vt === 'ADMISSION') commission_amount += parseFloat(clinic.admission_commission || 0);
+          else if (vt === 'ULTRASOUND') commission_amount += parseFloat(clinic.ultrasound_commission || 0);
+          else if (vt === 'XRAY') commission_amount += parseFloat(clinic.xray_commission || 0);
+        });
       }
     }
+
+    const visit_type_string = visitTypesArray.length > 0 ? visitTypesArray.join(', ') : null;
 
     const query = `
       INSERT INTO clinic_referral_transactions (patient_id, refer_clinic_id, visit_type, commission_amount, notes, created_by)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *;
     `;
-    const result = await db.query(query, [patient_id, refer_clinic_id, visit_type || null, commission_amount, notes, req.user.id]);
+    const result = await db.query(query, [patient_id, refer_clinic_id, visit_type_string, commission_amount, notes, req.user.id]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('CREATE CLINIC REFERRAL TRANSACTION ERROR:', err);
@@ -408,8 +423,21 @@ app.put('/api/clinic-referral-transactions/:id/visit-type', authenticateToken, a
   const { id } = req.params;
   const { visit_type } = req.body;
 
-  if (!visit_type || !['OPD', 'OT', 'ADMISSION'].includes(visit_type)) {
-    return res.status(400).json({ error: 'Invalid or missing visit type' });
+  let visitTypesArray = [];
+  if (Array.isArray(visit_type)) {
+    visitTypesArray = visit_type.map(vt => vt.trim().toUpperCase());
+  } else if (typeof visit_type === 'string' && visit_type.trim() !== '') {
+    visitTypesArray = visit_type.split(',').map(vt => vt.trim().toUpperCase());
+  }
+
+  if (visitTypesArray.length === 0) {
+    return res.status(400).json({ error: 'At least one visit type must be selected' });
+  }
+
+  const validTypes = ['OPD', 'OT', 'ADMISSION', 'ULTRASOUND', 'XRAY'];
+  const hasInvalidType = visitTypesArray.some(vt => !validTypes.includes(vt));
+  if (hasInvalidType) {
+    return res.status(400).json({ error: 'Invalid visit type selected' });
   }
 
   const client = await db.pool.connect();
@@ -422,25 +450,27 @@ app.put('/api/clinic-referral-transactions/:id/visit-type', authenticateToken, a
     const refer_clinic_id = txRes.rows[0].refer_clinic_id;
 
     // Fetch the correct commission amount based on the visit type from the refer clinic
-    const clinicRes = await client.query('SELECT opd_commission, ot_commission, admission_commission FROM refer_clinics WHERE id = $1', [refer_clinic_id]);
+    const clinicRes = await client.query('SELECT opd_commission, ot_commission, admission_commission, ultrasound_commission, xray_commission FROM refer_clinics WHERE id = $1', [refer_clinic_id]);
     if (clinicRes.rows.length === 0) throw new Error('Refer clinic not found');
     const clinic = clinicRes.rows[0];
 
-    let commission_amount = 0;
-    if (visit_type === 'OPD') {
-      commission_amount = clinic.opd_commission;
-    } else if (visit_type === 'OT') {
-      commission_amount = clinic.ot_commission;
-    } else if (visit_type === 'ADMISSION') {
-      commission_amount = clinic.admission_commission;
-    }
+    let commission_amount = 0.00;
+    visitTypesArray.forEach(vt => {
+      if (vt === 'OPD') commission_amount += parseFloat(clinic.opd_commission || 0);
+      else if (vt === 'OT') commission_amount += parseFloat(clinic.ot_commission || 0);
+      else if (vt === 'ADMISSION') commission_amount += parseFloat(clinic.admission_commission || 0);
+      else if (vt === 'ULTRASOUND') commission_amount += parseFloat(clinic.ultrasound_commission || 0);
+      else if (vt === 'XRAY') commission_amount += parseFloat(clinic.xray_commission || 0);
+    });
+
+    const visit_type_string = visitTypesArray.join(', ');
 
     const updateRes = await client.query(`
       UPDATE clinic_referral_transactions
       SET visit_type = $1, commission_amount = $2, updated_at = CURRENT_TIMESTAMP, updated_by = $3
       WHERE id = $4
       RETURNING *;
-    `, [visit_type, commission_amount, req.user.id, id]);
+    `, [visit_type_string, commission_amount, req.user.id, id]);
 
     await client.query('COMMIT');
     res.json(updateRes.rows[0]);

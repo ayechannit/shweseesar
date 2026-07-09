@@ -95,6 +95,8 @@ export const masterDataConfig = {
       { name: 'opd_commission', label: 'OPD Commission', type: 'number', required: true },
       { name: 'ot_commission', label: 'OT Commission', type: 'number', required: true },
       { name: 'admission_commission', label: 'Admission Commission', type: 'number', required: true },
+      { name: 'ultrasound_commission', label: 'Ultrasound Commission', type: 'number', required: true },
+      { name: 'xray_commission', label: 'X-Ray Commission', type: 'number', required: true },
     ]
   }
 };
