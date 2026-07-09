@@ -495,7 +495,7 @@ export default function StockManagement() {
                         </td>
                         <td>
                           <div className="actions" style={{ justifyContent: 'center', gap: '0.5rem' }}>
-                            {item.category_name === 'Pharmacy' && (
+                            {item.category_name?.toUpperCase() === 'PHARMACY' && (
                               <button 
                                 className="btn btn-outline" 
                                 style={{ padding: '0.25rem 0.5rem', color: '#10b981', borderColor: '#10b981' }}
