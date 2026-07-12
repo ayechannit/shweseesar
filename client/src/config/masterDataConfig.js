@@ -5,7 +5,7 @@ export const masterDataConfig = {
     fields: [
       { name: 'name', label: 'Name', type: 'text', required: true },
       { name: 'patient_code', label: 'Patient Code', type: 'text', required: true, readonly: true },
-      { name: 'phone_number', label: 'Phone Number', type: 'text', required: true },
+      { name: 'phone_number', label: 'Phone Number (Optional)', type: 'text', required: false },
       { name: 'age', label: 'Age', type: 'number', required: false, transient: true, hideInTable: true },
       { name: 'date_of_birth', label: 'Date of Birth', type: 'date', required: true },
       { name: 'address', label: 'Address', type: 'text', required: true },

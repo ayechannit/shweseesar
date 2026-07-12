@@ -152,9 +152,9 @@ export default function AddPatientModal({ isOpen, onClose, onSave }) {
           </div>
 
           <div className="form-group mb-4">
-            <label className="form-label">Phone Number</label>
+            <label className="form-label">Phone Number (Optional)</label>
             <input 
-              type="text" className="form-control" required
+              type="text" className="form-control"
               name="phone_number"
               value={newPatient.phone_number}
               onChange={handleInputChange}
