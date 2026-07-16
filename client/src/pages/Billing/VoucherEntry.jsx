@@ -730,16 +730,15 @@ export default function VoucherEntry({ editVoucherId, onSave, onCancel }) {
             <div className="grid grid-cols-1 gap-4 mb-6">
               <div className="form-group">
                 <label className="form-label" style={{ fontWeight: 700, fontSize: '0.875rem' }}>
-                  Voucher Date {editVoucherId && <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>(Locked)</span>}
+                  Voucher Date
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input 
                     type="date" 
                     className="form-control" 
-                    style={{ height: '42px', borderRadius: '8px', paddingLeft: '36px', backgroundColor: editVoucherId ? '#f1f5f9' : 'white', cursor: editVoucherId ? 'not-allowed' : 'default' }}
+                    style={{ height: '42px', borderRadius: '8px', paddingLeft: '36px' }}
                     value={voucherDate}
                     onChange={(e) => setVoucherDate(e.target.value)}
-                    disabled={!!editVoucherId}
                   />
                   <Calendar size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                 </div>

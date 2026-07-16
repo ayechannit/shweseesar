@@ -54,6 +54,7 @@ export default function PurchaseManagement() {
   const [notes, setNotes] = useState('');
   const [paidAmount, setPaidAmount] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
+  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
   
   // Searchable Dropdown State
   const [supplierSearch, setSupplierSearch] = useState('');
@@ -176,6 +177,7 @@ export default function PurchaseManagement() {
       setNotes(data.notes || '');
       setPaidAmount(parseFloat(data.paid_amount) || 0);
       setDiscountAmount(parseFloat(data.discount_amount) || 0);
+      setPurchaseDate(data.created_at ? data.created_at.split('T')[0] : new Date().toISOString().split('T')[0]);
       setItems(data.items.map(item => ({
         ...item,
         purchase_price: parseFloat(item.purchase_price),
@@ -407,7 +409,8 @@ export default function PurchaseManagement() {
       paid_amount: parseFloat(paidAmount) || 0,
       balance_amount: balanceAmount,
       payment_method: paymentMethod,
-      notes: notes
+      notes: notes,
+      created_at: purchaseDate
     };
 
     try {
@@ -430,6 +433,7 @@ export default function PurchaseManagement() {
         setPaidAmount(0);
         setDiscountAmount(0);
         setNotes('');
+        setPurchaseDate(new Date().toISOString().split('T')[0]);
       } else {
         const errorData = await res.json();
         alert(errorData.error || "Failed to save purchase");
@@ -445,7 +449,7 @@ export default function PurchaseManagement() {
       <div className="page-header">
         <h1 className="page-title">Purchases</h1>
         <div className="header-actions">
-          <button className="btn btn-primary" onClick={() => { setIsEditMode(false); setEditingId(null); setSupplierId(''); setSupplierSearch(''); setItems([]); setPaidAmount(0); setDiscountAmount(0); setNotes(''); setIsEntryOpen(true); }}>
+          <button className="btn btn-primary" onClick={() => { setIsEditMode(false); setEditingId(null); setSupplierId(''); setSupplierSearch(''); setItems([]); setPaidAmount(0); setDiscountAmount(0); setNotes(''); setPurchaseDate(new Date().toISOString().split('T')[0]); setIsEntryOpen(true); }}>
             <Plus size={16} /> New Purchase Invoice
           </button>
         </div>
@@ -639,7 +643,7 @@ export default function PurchaseManagement() {
               <h2 className="modal-title" style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <ShoppingBag size={20} color="#4f46e5" /> {isEditMode ? 'Edit Purchase Entry' : 'New Purchase Entry'}
               </h2>
-              <button className="close-btn" onClick={() => { setIsEntryOpen(false); setIsEditMode(false); setEditingId(null); setSupplierId(''); setSupplierSearch(''); setItems([]); setPaidAmount(0); setNotes(''); }} style={{ background: '#f1f5f9', border: 'none', padding: '0.5rem', borderRadius: '50%', color: '#64748b', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => Object.assign(e.currentTarget.style, { background: '#e2e8f0', color: '#0f172a' })} onMouseOut={e => Object.assign(e.currentTarget.style, { background: '#f1f5f9', color: '#64748b' })}>
+              <button className="close-btn" onClick={() => { setIsEntryOpen(false); setIsEditMode(false); setEditingId(null); setSupplierId(''); setSupplierSearch(''); setItems([]); setPaidAmount(0); setNotes(''); setPurchaseDate(new Date().toISOString().split('T')[0]); }} style={{ background: '#f1f5f9', border: 'none', padding: '0.5rem', borderRadius: '50%', color: '#64748b', cursor: 'pointer', transition: 'all 0.2s' }} onMouseOver={e => Object.assign(e.currentTarget.style, { background: '#e2e8f0', color: '#0f172a' })} onMouseOut={e => Object.assign(e.currentTarget.style, { background: '#f1f5f9', color: '#64748b' })}>
                 <X size={20} />
               </button>
             </div>
@@ -648,7 +652,7 @@ export default function PurchaseManagement() {
               
               {/* Left Side: Items & Details */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 700, color: '#475569' }}>Supplier</label>
                     <div style={{ display: 'flex', gap: '0.5rem', position: 'relative' }}>
@@ -701,6 +705,15 @@ export default function PurchaseManagement() {
                         <Plus size={18} />
                       </button>
                     </div>
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 700, color: '#475569' }}>Purchase Date</label>
+                    <input 
+                      type="date" 
+                      value={purchaseDate} 
+                      onChange={e => setPurchaseDate(e.target.value)} 
+                      style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontSize: '0.9rem', color: '#1e293b', outline: 'none' }}
+                    />
                   </div>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 700, color: '#475569' }}>Invoice Notes</label>

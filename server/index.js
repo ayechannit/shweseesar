@@ -3246,9 +3246,9 @@ app.post('/api/billing/vouchers', authenticateToken, async (req, res) => {
       }
 
       await client.query(`
-        INSERT INTO voucher_items (voucher_id, item_type, item_id, name, quantity, unit_price, subtotal, laboratory_id, lab_cost_price, lab_commission_pct, lab_payment_status, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      `, [voucherId, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id || null, labCostPrice, labCommissionPct, labPaymentStatus, req.user.id]);
+        INSERT INTO voucher_items (voucher_id, item_type, item_id, name, quantity, unit_price, subtotal, laboratory_id, lab_cost_price, lab_commission_pct, lab_payment_status, created_by${created_at ? ', created_at' : ''})
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12${created_at ? ', $13' : ''})
+      `, [voucherId, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id || null, labCostPrice, labCommissionPct, labPaymentStatus, req.user.id, ...(created_at ? [created_at] : [])]);
 
       if (item.item_type === 'PHARMACY') {
         await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`, req.user.id, created_at);
@@ -3266,9 +3266,9 @@ app.post('/api/billing/vouchers', authenticateToken, async (req, res) => {
     if (referrals && Array.isArray(referrals)) {
       for (const ref of referrals) {
         await client.query(`
-          INSERT INTO voucher_referrals (voucher_id, referred_person_id, referral_type, percentage, amount, created_by)
-          VALUES ($1, $2, $3, $4, $5, $6)
-        `, [voucherId, ref.referred_person_id, ref.referral_type, ref.percentage, ref.amount, req.user.id]);
+          INSERT INTO voucher_referrals (voucher_id, referred_person_id, referral_type, percentage, amount, created_by${created_at ? ', created_at' : ''})
+          VALUES ($1, $2, $3, $4, $5, $6${created_at ? ', $7' : ''})
+        `, [voucherId, ref.referred_person_id, ref.referral_type, ref.percentage, ref.amount, req.user.id, ...(created_at ? [created_at] : [])]);
       }
     }
 
@@ -3384,9 +3384,9 @@ app.put('/api/billing/vouchers/:id', authenticateToken, async (req, res) => {
       }
 
       await client.query(`
-        INSERT INTO voucher_items (voucher_id, item_type, item_id, name, quantity, unit_price, subtotal, laboratory_id, lab_cost_price, lab_commission_pct, lab_payment_status, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      `, [id, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id || null, labCostPrice, labCommissionPct, labPaymentStatus, req.user.id]);
+        INSERT INTO voucher_items (voucher_id, item_type, item_id, name, quantity, unit_price, subtotal, laboratory_id, lab_cost_price, lab_commission_pct, lab_payment_status, created_by${finalVoucherDate ? ', created_at' : ''})
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12${finalVoucherDate ? ', $13' : ''})
+      `, [id, item.item_type, item.item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.laboratory_id || null, labCostPrice, labCommissionPct, labPaymentStatus, req.user.id, ...(finalVoucherDate ? [finalVoucherDate] : [])]);
 
       if (item.item_type === 'PHARMACY') {
         await deductStock(client, item.item_id, item.quantity, `Voucher sale ${voucher_number}`, req.user.id, finalVoucherDate);
@@ -3403,9 +3403,9 @@ app.put('/api/billing/vouchers/:id', authenticateToken, async (req, res) => {
     if (referrals && Array.isArray(referrals)) {
       for (const ref of referrals) {
         await client.query(`
-          INSERT INTO voucher_referrals (voucher_id, referred_person_id, referral_type, percentage, amount, created_by)
-          VALUES ($1, $2, $3, $4, $5, $6)
-        `, [id, ref.referred_person_id, ref.referral_type, ref.percentage, ref.amount, req.user.id]);
+          INSERT INTO voucher_referrals (voucher_id, referred_person_id, referral_type, percentage, amount, created_by${finalVoucherDate ? ', created_at' : ''})
+          VALUES ($1, $2, $3, $4, $5, $6${finalVoucherDate ? ', $7' : ''})
+        `, [id, ref.referred_person_id, ref.referral_type, ref.percentage, ref.amount, req.user.id, ...(finalVoucherDate ? [finalVoucherDate] : [])]);
       }
     }
 
@@ -3627,13 +3627,13 @@ app.get('/api/purchases', authenticateToken, async (req, res) => {
 // PUT: Update Purchase Invoice
 app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { 
-    supplier_id, items, 
-    total_amount, discount_amount, paid_amount, balance_amount, 
-    payment_method, notes 
+  const {
+    supplier_id, items,
+    total_amount, discount_amount, paid_amount, balance_amount,
+    payment_method, notes, created_at
   } = req.body;
 
-  console.log('PUT PURCHASE REQUEST:', { id, supplier_id, total_items: items?.length, discount_amount });
+  console.log('PUT PURCHASE REQUEST:', { id, supplier_id, total_items: items?.length, discount_amount, created_at });
 
   const client = await db.pool.connect();
   try {
@@ -3661,8 +3661,8 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
     for (const st of transactionsRes.rows) {
       if (st.current_batch_qty < st.quantity) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ 
-          error: `Cannot edit: Some items from batch ${st.batch_id} have already been used or sold.` 
+        return res.status(400).json({
+          error: `Cannot edit: Some items from batch ${st.batch_id} have already been used or sold.`
         });
       }
     }
@@ -3679,28 +3679,28 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
     await client.query(`
       UPDATE purchases 
       SET supplier_id = $1, total_amount = $2, discount_amount = $3, paid_amount = $4, balance_amount = $5, 
-          payment_method = $6, notes = $7, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8
-    `, [supplier_id, total_amount, discount_amount || 0, paid_amount, balance_amount, payment_method, notes, id]);
+          payment_method = $6, notes = $7, created_at = COALESCE($8, created_at), updated_at = CURRENT_TIMESTAMP
+      WHERE id = $9
+    `, [supplier_id, total_amount, discount_amount || 0, paid_amount, balance_amount, payment_method, notes, created_at || null, id]);
 
     // 5. Insert New Items & Update Stock
     for (const item of items) {
       await client.query(`
-        INSERT INTO purchase_items (purchase_id, item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, subtotal, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      `, [id, item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, item.subtotal, req.user.id]);
+        INSERT INTO purchase_items (purchase_id, item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, subtotal, created_by${created_at ? ', created_at' : ''})
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9${created_at ? ', $10' : ''})
+      `, [id, item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, item.subtotal, req.user.id, ...(created_at ? [created_at] : [])]);
 
       const batchRes = await client.query(`
-        INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, created_by${created_at ? ', created_at' : ''})
+        VALUES ($1, $2, $3, $4, $5, $6, $7${created_at ? ', $8' : ''})
         RETURNING id
-      `, [item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, req.user.id]);
+      `, [item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, req.user.id, ...(created_at ? [created_at] : [])]);
       const batchId = batchRes.rows[0].id;
 
       await client.query(`
-        INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [item.item_id, batchId, 'IN', item.quantity, `Purchase Invoice ${invoice_number}`, req.user.id]);
+        INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by${created_at ? ', created_at' : ''})
+        VALUES ($1, $2, $3, $4, $5, $6${created_at ? ', $7' : ''})
+      `, [item.item_id, batchId, 'IN', item.quantity, `Purchase Invoice ${invoice_number}`, req.user.id, ...(created_at ? [created_at] : [])]);
     }
 
     await client.query('COMMIT');
@@ -3804,11 +3804,12 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
   const { 
     supplier_id, items, 
     total_amount, discount_amount, paid_amount, balance_amount, 
-    payment_method, notes 
+    payment_method, notes, created_at 
   } = req.body;
 
-  // Generate Invoice Number: INV-YYMMDD-RAND
-  const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+  // Generate Invoice Number: INV-YYMMDD-RAND (using selected created_at date if provided)
+  const dateObj = created_at ? new Date(created_at) : new Date();
+  const datePart = dateObj.toISOString().slice(2, 10).replace(/-/g, '');
   const randPart = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
   const invoice_number = `INV-${datePart}-${randPart}`;
 
@@ -3817,35 +3818,54 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
     await client.query('BEGIN');
 
     // 1. Insert Purchase Record
-    const pRes = await client.query(`
-      INSERT INTO purchases (invoice_number, supplier_id, total_amount, discount_amount, paid_amount, balance_amount, payment_method, notes, created_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    const insertPurchaseQuery = `
+      INSERT INTO purchases (invoice_number, supplier_id, total_amount, discount_amount, paid_amount, balance_amount, payment_method, notes, created_by${created_at ? ', created_at' : ''})
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9${created_at ? ', $10' : ''})
       RETURNING id
-    `, [invoice_number, supplier_id, total_amount, discount_amount || 0, paid_amount, balance_amount, payment_method, notes, req.user.id]);
+    `;
+    const purchaseParams = [invoice_number, supplier_id, total_amount, discount_amount || 0, paid_amount, balance_amount, payment_method, notes, req.user.id];
+    if (created_at) {
+      purchaseParams.push(created_at);
+    }
+    const pRes = await client.query(insertPurchaseQuery, purchaseParams);
     const purchaseId = pRes.rows[0].id;
 
     // 2. Insert Items & Update Stock
     for (const item of items) {
       // Create purchase item record
-      await client.query(`
-        INSERT INTO purchase_items (purchase_id, item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, subtotal, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      `, [purchaseId, item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, item.subtotal, req.user.id]);
+      const insertItemQuery = `
+        INSERT INTO purchase_items (purchase_id, item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, subtotal, created_by${created_at ? ', created_at' : ''})
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9${created_at ? ', $10' : ''})
+      `;
+      const itemParams = [purchaseId, item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, item.subtotal, req.user.id];
+      if (created_at) {
+        itemParams.push(created_at);
+      }
+      await client.query(insertItemQuery, itemParams);
 
       // Create stock batch for FEFO tracking
       const batchQuery = `
-        INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO stock_batches (item_id, batch_number, expiry_date, quantity, purchase_price, sale_price, created_by${created_at ? ', created_at' : ''})
+        VALUES ($1, $2, $3, $4, $5, $6, $7${created_at ? ', $8' : ''})
         RETURNING id;
       `;
-      const batchRes = await client.query(batchQuery, [item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, req.user.id]);
+      const batchParams = [item.item_id, item.batch_number || '', item.expiry_date || null, item.quantity, item.purchase_price, item.sale_price, req.user.id];
+      if (created_at) {
+        batchParams.push(created_at);
+      }
+      const batchRes = await client.query(batchQuery, batchParams);
       const batchId = batchRes.rows[0].id;
 
       // Log transaction
-      await client.query(
-        'INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
-        [item.item_id, batchId, 'IN', item.quantity, `Purchase Invoice ${invoice_number}`, req.user.id]
-      );
+      const txQuery = `
+        INSERT INTO stock_transactions (item_id, batch_id, type, quantity, reason, created_by${created_at ? ', created_at' : ''})
+        VALUES ($1, $2, $3, $4, $5, $6${created_at ? ', $7' : ''})
+      `;
+      const txParams = [item.item_id, batchId, 'IN', item.quantity, `Purchase Invoice ${invoice_number}`, req.user.id];
+      if (created_at) {
+        txParams.push(created_at);
+      }
+      await client.query(txQuery, txParams);
     }
 
     await client.query('COMMIT');
