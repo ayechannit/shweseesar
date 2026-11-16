@@ -2823,42 +2823,119 @@ const deductStock = async (client, itemId, quantityToDeduct, reason, userId, cus
 };
 
 // GET: All vouchers (paginated)
+// Build a CSV string (with UTF-8 BOM so Excel shows Myanmar text correctly)
+const toCsv = (headers, rows) => {
+  const esc = (val) => {
+    if (val === null || val === undefined) return '';
+    const s = String(val);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [headers.map(esc).join(',')];
+  rows.forEach(r => lines.push(r.map(esc).join(',')));
+  return '﻿' + lines.join('\r\n') + '\r\n';
+};
+
+const sendCsv = (res, filename, csv) => {
+  res.header('Content-Type', 'text/csv; charset=utf-8');
+  res.attachment(filename);
+  res.send(csv);
+};
+
+// Shared filters for sale voucher list & export
+const buildVoucherFilters = (query) => {
+  const { voucherno, fromdate, todate, patientcode, patientname, physician } = query;
+  const whereClauses = [];
+  const queryParams = [];
+
+  if (voucherno) {
+    queryParams.push(`%${voucherno}%`);
+    whereClauses.push(`v.voucher_number ILIKE $${queryParams.length}`);
+  }
+  if (fromdate) {
+    queryParams.push(fromdate);
+    whereClauses.push(`v.created_at >= $${queryParams.length}`);
+  }
+  if (todate) {
+    queryParams.push(`${todate} 23:59:59`);
+    whereClauses.push(`v.created_at <= $${queryParams.length}`);
+  }
+  if (patientcode) {
+    queryParams.push(`%${patientcode}%`);
+    whereClauses.push(`p.patient_code ILIKE $${queryParams.length}`);
+  }
+  if (patientname) {
+    queryParams.push(`%${patientname}%`);
+    whereClauses.push(`p.name ILIKE $${queryParams.length}`);
+  }
+  if (physician) {
+    queryParams.push(`%${physician}%`);
+    whereClauses.push(`doc.name ILIKE $${queryParams.length}`);
+  }
+
+  const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  return { whereString, queryParams };
+};
+
+// GET: Export sale vouchers to CSV (mode=summary | items)
+app.get('/api/billing/vouchers/export', authenticateToken, async (req, res) => {
+  const mode = req.query.mode === 'items' ? 'items' : 'summary';
+  try {
+    const { whereString, queryParams } = buildVoucherFilters(req.query);
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    if (mode === 'summary') {
+      const result = await db.query(`
+        SELECT v.voucher_number, to_char(v.created_at, 'YYYY-MM-DD HH24:MI') AS sale_date,
+               p.patient_code, p.name AS patient_name, doc.name AS physician_name,
+               v.total_amount, v.discount_amount, v.net_amount, v.payment_method, v.notes
+        FROM vouchers v
+        LEFT JOIN patients p ON v.patient_id = p.id
+        LEFT JOIN physicians doc ON v.physician_id = doc.id
+        ${whereString}
+        ORDER BY v.created_at ASC
+      `, queryParams);
+
+      const csv = toCsv(
+        ['Voucher No', 'Sale Date', 'Patient Code', 'Patient Name', 'Physician', 'Total Amount', 'Discount', 'Net Amount', 'Payment Method', 'Notes'],
+        result.rows.map(r => [r.voucher_number, r.sale_date, r.patient_code, r.patient_name, r.physician_name,
+          r.total_amount, r.discount_amount, r.net_amount, r.payment_method, r.notes])
+      );
+      return sendCsv(res, `sale_vouchers_${stamp}.csv`, csv);
+    }
+
+    const result = await db.query(`
+      SELECT v.voucher_number, to_char(v.created_at, 'YYYY-MM-DD HH24:MI') AS sale_date,
+             p.patient_code, p.name AS patient_name, doc.name AS physician_name, v.payment_method,
+             vi.item_type, vi.name AS item_name, l.name AS laboratory_name,
+             vi.quantity, vi.unit_price, vi.subtotal
+      FROM vouchers v
+      JOIN voucher_items vi ON vi.voucher_id = v.id
+      LEFT JOIN laboratories l ON vi.laboratory_id = l.id
+      LEFT JOIN patients p ON v.patient_id = p.id
+      LEFT JOIN physicians doc ON v.physician_id = doc.id
+      ${whereString}
+      ORDER BY v.created_at ASC, vi.id ASC
+    `, queryParams);
+
+    const csv = toCsv(
+      ['Voucher No', 'Sale Date', 'Patient Code', 'Patient Name', 'Physician', 'Payment Method', 'Item Type', 'Item Name', 'Laboratory', 'Qty', 'Unit Price', 'Subtotal'],
+      result.rows.map(r => [r.voucher_number, r.sale_date, r.patient_code, r.patient_name, r.physician_name, r.payment_method,
+        r.item_type, r.item_name, r.laboratory_name, r.quantity, r.unit_price, r.subtotal])
+    );
+    return sendCsv(res, `sale_voucher_items_${stamp}.csv`, csv);
+  } catch (err) {
+    console.error('VOUCHER EXPORT ERROR:', err);
+    res.status(500).json({ error: 'Failed to export vouchers' });
+  }
+});
+
 app.get('/api/billing/vouchers', authenticateToken, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
-  const { voucherno, fromdate, todate, patientcode, patientname, physician } = req.query;
 
   try {
-    let whereClauses = [];
-    let queryParams = [];
-
-    if (voucherno) {
-      queryParams.push(`%${voucherno}%`);
-      whereClauses.push(`v.voucher_number ILIKE $${queryParams.length}`);
-    }
-    if (fromdate) {
-      queryParams.push(fromdate);
-      whereClauses.push(`v.created_at >= $${queryParams.length}`);
-    }
-    if (todate) {
-      queryParams.push(`${todate} 23:59:59`);
-      whereClauses.push(`v.created_at <= $${queryParams.length}`);
-    }
-    if (patientcode) {
-      queryParams.push(`%${patientcode}%`);
-      whereClauses.push(`p.patient_code ILIKE $${queryParams.length}`);
-    }
-    if (patientname) {
-      queryParams.push(`%${patientname}%`);
-      whereClauses.push(`p.name ILIKE $${queryParams.length}`);
-    }
-    if (physician) {
-      queryParams.push(`%${physician}%`);
-      whereClauses.push(`doc.name ILIKE $${queryParams.length}`);
-    }
-
-    const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const { whereString, queryParams } = buildVoucherFilters(req.query);
 
     const countRes = await db.query(`
       SELECT COUNT(*) 
@@ -3567,6 +3644,77 @@ app.post('/api/billing/referrals/bulk-pay', authenticateToken, async (req, res) 
 // --- Purchases Module Routes ---
 
 // GET: All purchases (paginated with filters)
+// GET: Export purchase vouchers to CSV (mode=summary | items)
+app.get('/api/purchases/export', authenticateToken, async (req, res) => {
+  const { from_date, to_date, invoice_no, supplier_id } = req.query;
+  const mode = req.query.mode === 'items' ? 'items' : 'summary';
+
+  try {
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+    if (from_date) {
+      params.push(from_date);
+      whereClause += ` AND p.created_at >= $${params.length}`;
+    }
+    if (to_date) {
+      params.push(to_date);
+      whereClause += ` AND p.created_at < $${params.length}::date + interval '1 day'`;
+    }
+    if (invoice_no) {
+      params.push(`%${invoice_no}%`);
+      whereClause += ` AND p.invoice_number ILIKE $${params.length}`;
+    }
+    if (supplier_id) {
+      params.push(supplier_id);
+      whereClause += ` AND p.supplier_id = $${params.length}`;
+    }
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    if (mode === 'summary') {
+      const result = await db.query(`
+        SELECT p.invoice_number, to_char(p.created_at, 'YYYY-MM-DD HH24:MI') AS purchase_date,
+               s.company_name AS supplier_name, p.total_amount, p.discount_amount,
+               (COALESCE(p.total_amount, 0) - COALESCE(p.discount_amount, 0)) AS net_amount,
+               p.paid_amount, p.balance_amount, p.payment_method, p.notes
+        FROM purchases p
+        LEFT JOIN suppliers s ON p.supplier_id = s.id
+        ${whereClause}
+        ORDER BY p.created_at ASC
+      `, params);
+
+      const csv = toCsv(
+        ['Invoice No', 'Purchase Date', 'Supplier', 'Total Amount', 'Discount', 'Net Amount', 'Paid', 'Balance', 'Payment Method', 'Notes'],
+        result.rows.map(r => [r.invoice_number, r.purchase_date, r.supplier_name, r.total_amount, r.discount_amount,
+          r.net_amount, r.paid_amount, r.balance_amount, r.payment_method, r.notes])
+      );
+      return sendCsv(res, `purchase_vouchers_${stamp}.csv`, csv);
+    }
+
+    const result = await db.query(`
+      SELECT p.invoice_number, to_char(p.created_at, 'YYYY-MM-DD HH24:MI') AS purchase_date,
+             s.company_name AS supplier_name, si.item_code, si.name AS item_name, si.unit,
+             pi.batch_number, to_char(pi.expiry_date, 'YYYY-MM-DD') AS expiry_date,
+             pi.quantity, pi.purchase_price, pi.sale_price, pi.subtotal
+      FROM purchases p
+      JOIN purchase_items pi ON pi.purchase_id = p.id
+      LEFT JOIN stock_items si ON pi.item_id = si.id
+      LEFT JOIN suppliers s ON p.supplier_id = s.id
+      ${whereClause}
+      ORDER BY p.created_at ASC, pi.id ASC
+    `, params);
+
+    const csv = toCsv(
+      ['Invoice No', 'Purchase Date', 'Supplier', 'Item Code', 'Item Name', 'Unit', 'Batch No', 'Expiry Date', 'Qty', 'Purchase Price', 'Sale Price', 'Subtotal'],
+      result.rows.map(r => [r.invoice_number, r.purchase_date, r.supplier_name, r.item_code, r.item_name, r.unit,
+        r.batch_number, r.expiry_date, r.quantity, r.purchase_price, r.sale_price, r.subtotal])
+    );
+    return sendCsv(res, `purchase_voucher_items_${stamp}.csv`, csv);
+  } catch (err) {
+    console.error('PURCHASE EXPORT ERROR:', err);
+    res.status(500).json({ error: 'Failed to export purchases' });
+  }
+});
+
 app.get('/api/purchases', authenticateToken, async (req, res) => {
   const { page = 1, limit = 10, from_date, to_date, invoice_no, supplier_id } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);

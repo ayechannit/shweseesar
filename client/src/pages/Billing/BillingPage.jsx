@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Search, FileText, Calendar, User, DollarSign, Eye, Printer, Filter, X, RotateCcw, Hash, Stethoscope, Edit3, Trash2, MoreVertical } from 'lucide-react';
 import VoucherEntry from './VoucherEntry';
 import apiRequest from '../../utils/api';
+import { downloadFile } from '../../utils/download';
+import ExportMenu from '../../components/ExportMenu';
 import { useAuth } from '../../context/AuthContext';
 
 import { API_BASE } from '../../config';
@@ -297,6 +299,17 @@ export default function BillingPage() {
     fetchVouchers();
   };
 
+  // Export uses the current filters (date range, patient, etc.)
+  const handleExport = async (mode) => {
+    const queryParams = new URLSearchParams({
+      mode,
+      ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ''))
+    });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const name = mode === 'items' ? `sale_voucher_items_${stamp}.csv` : `sale_vouchers_${stamp}.csv`;
+    await downloadFile(`/billing/vouchers/export?${queryParams.toString()}`, name);
+  };
+
   const handleFilterReset = () => {
     setFilters({
       voucherno: '',
@@ -327,6 +340,7 @@ export default function BillingPage() {
               >
                 <Filter size={16} /> {showFilters ? 'Hide Filters' : 'Filters'}
               </button>
+              <ExportMenu onExport={handleExport} style={{ height: '38px', fontSize: '0.8125rem' }} />
               <button className="btn btn-primary" style={{ height: '38px', fontSize: '0.8125rem' }} onClick={() => setView('create')}>
                 <Plus size={16} /> New Voucher
               </button>

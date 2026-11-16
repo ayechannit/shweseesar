@@ -3,6 +3,8 @@ import { Truck, Plus, Eye, X, AlertTriangle, ShoppingBag, Search, Edit, Trash2, 
 import { useAuth } from '../../context/AuthContext';
 
 import apiRequest from '../../utils/api';
+import { downloadFile } from '../../utils/download';
+import ExportMenu from '../../components/ExportMenu';
 
 export default function PurchaseManagement() {
   const { user } = useAuth();
@@ -110,6 +112,18 @@ export default function PurchaseManagement() {
     } else {
       setPage(1);
     }
+  };
+
+  // Export uses the current filters (date range, invoice no, supplier)
+  const handleExport = async (mode) => {
+    const params = new URLSearchParams({ mode });
+    if (fromDate) params.append('from_date', fromDate);
+    if (toDate) params.append('to_date', toDate);
+    if (invoiceNoFilter) params.append('invoice_no', invoiceNoFilter);
+    if (supplierFilter) params.append('supplier_id', supplierFilter);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const name = mode === 'items' ? `purchase_voucher_items_${stamp}.csv` : `purchase_vouchers_${stamp}.csv`;
+    await downloadFile(`/purchases/export?${params.toString()}`, name);
   };
 
   const handleClearFilters = () => {
@@ -448,7 +462,8 @@ export default function PurchaseManagement() {
     <div>
       <div className="page-header">
         <h1 className="page-title">Purchases</h1>
-        <div className="header-actions">
+        <div className="header-actions" style={{ display: 'flex', gap: '0.5rem' }}>
+          <ExportMenu onExport={handleExport} />
           <button className="btn btn-primary" onClick={() => { setIsEditMode(false); setEditingId(null); setSupplierId(''); setSupplierSearch(''); setItems([]); setPaidAmount(0); setDiscountAmount(0); setNotes(''); setPurchaseDate(new Date().toISOString().split('T')[0]); setIsEntryOpen(true); }}>
             <Plus size={16} /> New Purchase Invoice
           </button>
